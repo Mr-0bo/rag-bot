@@ -1,0 +1,23 @@
+# pip install -r requirements.txt
+# Servidor Web y API
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+
+# Base de datos ORM
+sqlalchemy>=2.0.0
+
+# LLM y Embeddings (Actual: Gemini | Futuro: OpenAI)
+google-generativeai>=0.7.0
+openai>=1.30.0
+tiktoken>=0.7.0
+
+# SDKs de Azure (Búsqueda Vectorial y Extracción de Documentos)
+azure-core>=1.30.0
+azure-search-documents==11.4.0
+azure-ai-documentintelligence==1.0.0b4
+azure-identity>=1.16.0
+
+# Utilidades y Variables de Entorno
+python-dotenv>=1.0.0

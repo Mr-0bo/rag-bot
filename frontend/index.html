@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Normativas Técnicas</title>
+  <link rel="stylesheet" href="/frontend/css/styles.css?v=7">
+</head>
+<body>
+
+  <!-- Modal Disclaimer / Responsabilidad Técnica -->
+  <div id="disclaimer-modal" class="modal-backdrop" style="display: none;">
+    <div class="disclaimer-dialog">
+      <div class="disclaimer-icon-badge">⚠️</div>
+      <h2>Aviso de Responsabilidad:</h2>
+      <p class="disclaimer-text">
+        Este asistente utiliza modelos de inteligencia artificial para agilizar la consulta y localización de lineamientos, normas y criterios de diseño.
+      </p>
+      <div class="disclaimer-callout">
+        Los modelos de IA pueden interpretar datos de forma imprecisa o cometer errores.
+        <strong>Bajo ninguna circunstancia se debe dar por sentado el resultado arrojado</strong> para decisiones importantes sin antes contrastar y verificar directamente las fuentes y normativas oficiales vigentes.
+      </div>
+
+      <div class="disclaimer-footer">
+        <label class="checkbox-container">
+          <input type="checkbox" id="dont-show-disclaimer-check">
+          <span class="checkmark"></span>
+          No volver a mostrar este aviso
+        </label>
+        <button type="button" class="btn-confirm" onclick="aceptarDisclaimer()">Entendido y continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Onboarding / Configuración de Perfil -->
+  <div id="onboarding-modal" class="modal-backdrop" style="display: none;">
+    <div class="onboarding-dialog">
+      <h2 id="modal-title">Configuración de perfil</h2>
+      <p id="modal-desc">Personaliza tu experiencia.</p>
+
+      <label class="field-label" for="user-name-input">Tu nombre o apellido</label>
+      <input type="text" id="user-name-input" class="input-text-wm" placeholder="Ej. Mario García" maxlength="30">
+
+      <label class="field-label" for="agent-name-input">Nombre para tu agente</label>
+      <input type="text" id="agent-name-input" class="input-text-wm" placeholder="Ej. Nova, Jarvis" maxlength="25">
+
+      <label class="field-label">Trato preferido</label>
+      <div class="pronoun-group">
+        <button type="button" class="btn-choice" id="pronoun-el" onclick="seleccionarPronombre('el', this)">Él</button>
+        <button type="button" class="btn-choice" id="pronoun-ella" onclick="seleccionarPronombre('ella', this)">Ella</button>
+        <button type="button" class="btn-choice active" id="pronoun-neutro" onclick="seleccionarPronombre('neutro', this)">Prefiero no decirlo</button>
+      </div>
+
+      <div class="modal-actions-row">
+        <button type="button" class="btn-cancel" id="btn-cancel-profile" style="display: none;" onclick="cerrarModalPerfil()">Cancelar</button>
+        <button type="button" class="btn-confirm" onclick="guardarPerfil()">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Renombrar Chat -->
+  <div id="rename-modal" class="modal-backdrop" style="display: none;">
+    <div class="custom-dialog-card">
+      <div class="custom-dialog-badge">✏️</div>
+      <h2>Cambiar nombre</h2>
+      <p>Asigna un nuevo título a esta consulta (máximo 45 caracteres):</p>
+      <input type="text" id="rename-input" class="input-text-wm" style="margin-top: 16px; text-align: center;" maxlength="45">
+      <div class="modal-actions-row" style="margin-top: 22px;">
+        <button type="button" class="btn-cancel" onclick="cerrarModalRenombrar()">Cancelar</button>
+        <button type="button" class="btn-confirm" onclick="guardarRenombrar()">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Exportar / Compartir Chat -->
+  <div id="export-modal" class="modal-backdrop" style="display: none;">
+    <div class="export-dialog">
+      <h2>Exportar consulta</h2>
+      <p>Selecciona el formato en el que deseas descargar la conversación:</p>
+
+      <div class="export-options-grid">
+        <div class="export-card" onclick="ejecutarExportacion('html')">
+          <div class="export-icon">🌐</div>
+          <div class="export-info">
+            <span class="export-title">Página Web (.HTML)</span>
+            <span class="export-desc">Diseño limpio y estilizado con el tema visual actual (claro/oscuro).</span>
+          </div>
+        </div>
+
+        <div class="export-card" onclick="ejecutarExportacion('json')">
+          <div class="export-icon">{ }</div>
+          <div class="export-info">
+            <span class="export-title">Archivo de Datos (.JSON)</span>
+            <span class="export-desc">Texto plano con remitente, rol, contenido y fuentes estructuradas.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions-row" style="margin-top: 20px;">
+        <button type="button" class="btn-cancel" onclick="cerrarModalExportar()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Diálogo Personalizado -->
+  <div id="custom-dialog-modal" class="modal-backdrop" style="display: none;">
+    <div class="custom-dialog-card">
+      <div class="custom-dialog-badge" id="custom-dialog-icon">⚠️</div>
+      <h2 id="custom-dialog-title">Confirmar acción</h2>
+      <p id="custom-dialog-msg">¿Estás seguro de continuar?</p>
+
+      <div class="modal-actions-row" style="margin-top: 22px;">
+        <button type="button" class="btn-cancel" id="custom-dialog-cancel-btn">Cancelar</button>
+        <button type="button" class="btn-confirm" id="custom-dialog-confirm-btn">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor General -->
+  <div class="app-wrapper">
+    <!-- Sidebar con Bento Blue -->
+    <aside class="sidebar">
+      <div class="brand-badge">
+        <span class="brand-title">Normativas Técnicas</span>
+      </div>
+
+      <!-- Barra de acciones: Nueva consulta + Bote de basura -->
+      <div class="sidebar-actions-row">
+        <button class="btn-new-chat" onclick="crearSesion()">
+          <span>+</span> Nueva consulta
+        </button>
+        <button class="btn-clear-chats" onclick="eliminarTodosLosChats()" title="Eliminar todos los chats">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+            <path d="M10 11v6"></path>
+            <path d="M14 11v6"></path>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+          </svg>
+        </button>
+      </div>
+
+      <span class="session-section-title">Historial de consultas</span>
+      <ul class="session-list" id="session-list"></ul>
+
+      <!-- Footer inferior de la barra lateral -->
+      <div class="sidebar-footer">
+        <button class="user-profile-btn" onclick="abrirModalPerfil()" title="Editar perfil">
+          <div class="user-avatar" id="sidebar-user-avatar">U</div>
+          <div class="user-meta">
+            <span class="user-name-text" id="sidebar-user-name">Usuario</span>
+            <span class="user-sub-text" id="sidebar-user-pronoun">Configuración</span>
+          </div>
+          <span class="profile-arrow">›</span>
+        </button>
+
+        <div class="theme-switch-row">
+          <span class="theme-label" id="theme-status-text">Modo claro</span>
+          <label class="theme-slider-switch" title="Alternar tema">
+            <input type="checkbox" id="theme-toggle-check" onchange="alternarTema(this.checked)">
+            <span class="slider-round">
+              <span class="slider-icon sun">☀️</span>
+              <span class="slider-icon moon">🌙</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Ventana Principal -->
+    <main class="main-chat">
+      <!-- Topbar Fija -->
+      <header class="chat-topbar">
+        <div class="agent-avatar" id="agent-avatar-icon"></div>
+        <div class="topbar-info">
+          <span class="topbar-name" id="topbar-agent-name">Asistente</span>
+          <span class="topbar-status"><span class="status-dot"></span> Activo</span>
+        </div>
+      </header>
+
+      <!-- Mensajes -->
+      <div class="chat-scroll" id="chat-scroll"></div>
+
+      <!-- Dock inferior flotante -->
+      <div class="input-dock">
+        <div class="input-box-wrapper">
+          <div class="input-box">
+            <input type="text" id="query-input" placeholder="Consulta especificaciones, medidas o lineamientos..." onkeydown="alPresionarTecla(event)">
+            <button class="btn-send" onclick="enviarMensaje()">↑</button>
+          </div>
+          <p class="input-disclaimer-note">
+            Este asistente utliza modelos de Inteligencia Artificial y puede cometer errores. Verifica siempre las especificaciones en las fuentes oficiales antes de tomar decisiones.
+          </p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Librería para renderizar Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/frontend/js/app.js?v=7"></script>
+</body>
+</html>
