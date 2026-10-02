@@ -1,48 +1,100 @@
 # backend/routers/user.py
+import os
+import sys
 import uuid
 import json
 import datetime
-from typing import Optional
+import subprocess
+from pathlib import Path
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import case
 
-from backend.database import SessionLocal, Usuario, SesionChat, Mensaje
+from backend.database import get_db, Usuario, SesionChat, Mensaje, ConfiguracionApp
 
-router = APIRouter(prefix="/api", tags=["Usuarios y Sesiones"])
+router = APIRouter(prefix="/api", tags=["Usuarios y Configuración"])
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# ==========================================
+# UTILIDADES DE VALIDACIÓN DE ONEDRIVE
+# ==========================================
+def obtener_rutas_onedrive_sistema() -> List[Path]:
+    """Detecta las rutas oficiales de OneDrive en Windows y macOS."""
+    rutas = []
+    # 1. Variables de entorno comunes
+    for var in ["OneDriveCommercial", "OneDriveConsumer", "OneDrive", "ONEDRIVE"]:
+        val = os.getenv(var)
+        if val and Path(val).is_dir():
+            rutas.append(Path(val).resolve())
+
+    # 2. macOS CloudStorage
+    mac_cloud = Path.home() / "Library" / "CloudStorage"
+    if mac_cloud.exists():
+        for d in mac_cloud.iterdir():
+            if d.is_dir() and "OneDrive" in d.name and d not in rutas:
+                rutas.append(d.resolve())
+
+    # 3. Directorio del perfil de usuario (Windows / macOS)
+    perfil = Path.home()
+    for d in perfil.iterdir():
+        if d.is_dir() and "onedrive" in d.name.lower() and d.resolve() not in rutas:
+            rutas.append(d.resolve())
+
+    return rutas
+
+def validar_carpeta_onedrive(ruta_str: str) -> Path:
+    """Verifica que la ruta exista y sea un directorio (permite cualquier carpeta local)."""
+    if not ruta_str or not ruta_str.strip():
+        raise HTTPException(status_code=400, detail="La ruta no puede estar vacía.")
+
+    ruta = Path(ruta_str.strip()).expanduser().resolve()
+    if not ruta.exists() or not ruta.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=f"La ruta '{ruta_str}' no existe o no es un directorio válido."
+        )
+
+    return ruta
+
+
+# ==========================================
+# ESQUEMAS PYDANTIC
+# ==========================================
+class DirectorioValidacionRequest(BaseModel):
+    ruta: str
 
 
 class OnboardingRequest(BaseModel):
     user_id: str
     nombre: str = Field(..., min_length=1, max_length=30)
     pronombre: str
-    nombre_agente: Optional[str] = Field("Asistente Técnico", max_length=25)
+    nombre_agente: Optional[str] = Field("Copiloto Técnico", max_length=25)
+    region: str = Field("mexico", pattern="^(mexico|centroamerica)$")
+    directorio_obligatorio: str
+    directorio_opcional_1: Optional[str] = None
+    directorio_opcional_2: Optional[str] = None
 
 
-class DisclaimerRequest(BaseModel):
-    user_id: str
-    no_volver_a_mostrar: bool
-
-
-class RenameRequest(BaseModel):
-    titulo: str = Field(..., min_length=1, max_length=45)
+class ConfigUpdateRequest(BaseModel):
+    region: Optional[str] = Field(None, pattern="^(mexico|centroamerica)$")
+    directorio_obligatorio: str
+    directorio_opcional_1: Optional[str] = None
+    directorio_opcional_2: Optional[str] = None
 
 
 class UserStatusResponse(BaseModel):
     registrado: bool
     nombre: Optional[str] = None
     pronombre: Optional[str] = None
-    nombre_agente: Optional[str] = "Asistente Técnico"
+    nombre_agente: Optional[str] = "Copiloto Técnico"
     disclaimer_aceptado: bool = False
+    onboarding_completado: bool = False
+    region: str = "mexico"
+    directorio_obligatorio: Optional[str] = None
+    directorio_opcional_1: Optional[str] = None
+    directorio_opcional_2: Optional[str] = None
 
 
 class SessionResponse(BaseModel):
@@ -51,24 +103,145 @@ class SessionResponse(BaseModel):
     fijado: bool = False
 
 
+class RenameRequest(BaseModel):
+    titulo: str = Field(..., min_length=1, max_length=45)
+
+
+class DisclaimerRequest(BaseModel):
+    user_id: str
+    no_volver_a_mostrar: bool
+
+
 class MessageResponse(BaseModel):
     rol: str
     contenido: str
-    fuentes: list[str] = []
+    fuentes: List[str] = []
+
+
+# ==========================================
+# ENDPOINTS DE CONFIGURACIÓN Y ONBOARDING
+# ==========================================
+@router.post("/browse-directory")
+def examinar_directorio_nativo():
+    """Abre el explorador de carpetas nativo mediante un proceso independiente según el SO."""
+    ruta_elegida = ""
+
+    try:
+        if sys.platform == "darwin":
+            # Selector nativo de macOS vía AppleScript en System Events
+            script = """
+            tell application "System Events"
+                activate
+                set theFolder to choose folder with prompt "Selecciona la carpeta de normativas de OneDrive:"
+                return POSIX path of theFolder
+            end tell
+            """
+            res = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if res.returncode == 0:
+                ruta_elegida = res.stdout.strip()
+
+        elif sys.platform == "win32":
+            # Selector nativo de Windows vía PowerShell FolderBrowserDialog
+            ps_cmd = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "$f.Description = 'Selecciona la carpeta de normativas de OneDrive'; "
+                "if ($f.ShowDialog() -eq 'OK') { Write-Output $f.SelectedPath }"
+            )
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if res.returncode == 0:
+                ruta_elegida = res.stdout.strip()
+
+    except Exception as e:
+        print(f"[WARN BROWSE] No se pudo invocar el selector nativo: {e}")
+
+    return {"ruta": ruta_elegida}
+
+
+@router.post("/browse-file")
+def examinar_archivo_nativo():
+    """Abre el explorador de archivos nativo (solo para .json) mediante un proceso independiente según el SO."""
+    ruta_elegida = ""
+
+    try:
+        if sys.platform == "darwin":
+            # Selector nativo de macOS vía AppleScript
+            script = """
+            tell application "System Events"
+                activate
+                set theFile to choose file with prompt "Selecciona el chat a importar (.json):" of type {"json"}
+                return POSIX path of theFile
+            end tell
+            """
+            res = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if res.returncode == 0:
+                ruta_elegida = res.stdout.strip()
+
+        elif sys.platform == "win32":
+            # Selector nativo de Windows vía PowerShell OpenFileDialog
+            ps_cmd = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$f = New-Object System.Windows.Forms.OpenFileDialog; "
+                "$f.Filter = 'Archivos JSON (*.json)|*.json'; "
+                "$f.Title = 'Selecciona el chat a importar'; "
+                "if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }"
+            )
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if res.returncode == 0:
+                ruta_elegida = res.stdout.strip()
+
+    except Exception as e:
+        print(f"[WARN BROWSE FILE] No se pudo invocar el selector nativo: {e}")
+
+    return {"ruta": ruta_elegida}
+
+
+@router.post("/validate-directory")
+def validar_directorio(data: DirectorioValidacionRequest):
+    """Valida en tiempo real si una carpeta es de OneDrive antes de guardarla."""
+    ruta_validada = validar_carpeta_onedrive(data.ruta)
+    return {
+        "status": "ok",
+        "ruta_normalizada": str(ruta_validada)
+    }
 
 
 @router.get("/user/{user_id}", response_model=UserStatusResponse)
 def consultar_usuario(user_id: str, db: Session = Depends(get_db)):
     usuario = db.query(Usuario).filter(Usuario.id == user_id).first()
-    if not usuario:
-        return UserStatusResponse(registrado=False, disclaimer_aceptado=False)
+    config = db.query(ConfiguracionApp).first()
 
     return UserStatusResponse(
-        registrado=bool(usuario.nombre),
-        nombre=usuario.nombre,
-        pronombre=usuario.pronombre,
-        nombre_agente=usuario.nombre_agente or "Asistente Técnico",
-        disclaimer_aceptado=bool(usuario.disclaimer_aceptado)
+        registrado=bool(usuario and usuario.nombre),
+        nombre=usuario.nombre if usuario else None,
+        pronombre=usuario.pronombre if usuario else None,
+        nombre_agente=usuario.nombre_agente if usuario else "Copiloto Técnico",
+        disclaimer_aceptado=bool(usuario and usuario.disclaimer_aceptado),
+        onboarding_completado=bool(config and config.onboarding_completado),
+        region=config.region if config else "mexico",
+        directorio_obligatorio=config.directorio_obligatorio if config else None,
+        directorio_opcional_1=config.directorio_opcional_1 if config else None,
+        directorio_opcional_2=config.directorio_opcional_2 if config else None
     )
 
 
@@ -86,18 +259,65 @@ def registrar_disclaimer(data: DisclaimerRequest, db: Session = Depends(get_db))
 
 @router.post("/user/onboarding")
 def guardar_onboarding(data: OnboardingRequest, db: Session = Depends(get_db)):
+    # 1. Validar directorio obligatorio
+    ruta_obligatoria = validar_carpeta_onedrive(data.directorio_obligatorio)
+
+    # 2. Validar opcionales si se proporcionaron
+    ruta_opc1 = str(validar_carpeta_onedrive(data.directorio_opcional_1)) if data.directorio_opcional_1 else None
+    ruta_opc2 = str(validar_carpeta_onedrive(data.directorio_opcional_2)) if data.directorio_opcional_2 else None
+
+    # 3. Guardar o actualizar usuario
     usuario = db.query(Usuario).filter(Usuario.id == data.user_id).first()
     if not usuario:
         usuario = Usuario(id=data.user_id)
         db.add(usuario)
+
     usuario.nombre = data.nombre.strip()
     usuario.pronombre = data.pronombre
-    usuario.nombre_agente = data.nombre_agente.strip() if data.nombre_agente else "Asistente Técnico"
+    usuario.nombre_agente = data.nombre_agente.strip() if data.nombre_agente else "Copiloto Técnico"
+
+    # 4. Guardar configuración de directorios y región
+    config = db.query(ConfiguracionApp).first()
+    if not config:
+        config = ConfiguracionApp(id=1)
+        db.add(config)
+
+    config.region = data.region
+    config.directorio_obligatorio = str(ruta_obligatoria)
+    config.directorio_opcional_1 = ruta_opc1
+    config.directorio_opcional_2 = ruta_opc2
+    config.onboarding_completado = True
+
     db.commit()
     return {"status": "ok"}
 
 
-@router.get("/sessions/{user_id}", response_model=list[SessionResponse])
+@router.put("/config/directories")
+def actualizar_configuracion_directorios(data: ConfigUpdateRequest, db: Session = Depends(get_db)):
+    """Actualiza las carpetas desde el panel de ajustes (prohibido dejar 0 carpetas)."""
+    ruta_obligatoria = validar_carpeta_onedrive(data.directorio_obligatorio)
+    ruta_opc1 = str(validar_carpeta_onedrive(data.directorio_opcional_1)) if data.directorio_opcional_1 else None
+    ruta_opc2 = str(validar_carpeta_onedrive(data.directorio_opcional_2)) if data.directorio_opcional_2 else None
+
+    config = db.query(ConfiguracionApp).first()
+    if not config:
+        config = ConfiguracionApp(id=1)
+        db.add(config)
+
+    if data.region:
+        config.region = data.region
+    config.directorio_obligatorio = str(ruta_obligatoria)
+    config.directorio_opcional_1 = ruta_opc1
+    config.directorio_opcional_2 = ruta_opc2
+
+    db.commit()
+    return {"status": "ok"}
+
+
+# ==========================================
+# ENDPOINTS DE SESIONES Y MENSAJES
+# ==========================================
+@router.get("/sessions/{user_id}", response_model=List[SessionResponse])
 def obtener_sesiones(user_id: str, db: Session = Depends(get_db)):
     sesiones = (
         db.query(SesionChat)
@@ -192,7 +412,7 @@ def eliminar_todas_las_sesiones(user_id: str, db: Session = Depends(get_db)):
     return {"status": "ok", "eliminadas": len(sesiones)}
 
 
-@router.get("/messages/{session_id}", response_model=list[MessageResponse])
+@router.get("/messages/{session_id}", response_model=List[MessageResponse])
 def obtener_historial_sesion(session_id: str, db: Session = Depends(get_db)):
     mensajes = (
         db.query(Mensaje)

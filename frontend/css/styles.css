@@ -100,7 +100,7 @@ body {
   height: 100%;
 }
 
-/* Sidebar fija con Bento Blue */
+/* Sidebar lateral con fondo Bento Blue */
 .sidebar {
   width: 300px;
   background: linear-gradient(180deg, var(--wm-bentonville) 0%, #001440 100%);
@@ -115,19 +115,30 @@ body {
 
 .brand-badge {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-left: 6px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
 }
 
 .brand-title {
-  font-size: 17px;
+  font-size: 16.5px;
   font-weight: 700;
   color: var(--wm-white);
   letter-spacing: -0.3px;
 }
 
-/* Fila de acciones */
+.region-pill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: rgba(77, 189, 245, 0.25);
+  color: var(--wm-sky-blue);
+  border: 1px solid rgba(77, 189, 245, 0.4);
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+/* Fila de acciones superiores de la sidebar */
 .sidebar-actions-row {
   display: flex;
   gap: 8px;
@@ -205,7 +216,6 @@ body {
   gap: 6px;
 }
 
-/* Ítem de sesión con soporte para pin y 3 puntos */
 .session-item {
   position: relative;
   display: flex;
@@ -240,7 +250,6 @@ body {
   margin-right: 6px;
 }
 
-/* Icono de fijado (Pin) a la izquierda */
 .session-pin-icon {
   display: flex;
   align-items: center;
@@ -258,7 +267,6 @@ body {
   text-overflow: ellipsis;
 }
 
-/* Botón discreto de 3 puntos (•••) */
 .btn-session-options {
   opacity: 0;
   pointer-events: none;
@@ -289,7 +297,7 @@ body {
   color: #FFFFFF;
 }
 
-/* Menú Contextual Flotante Sobrio */
+/* Menú Contextual Flotante */
 .chat-context-menu {
   position: fixed;
   z-index: 1200;
@@ -429,7 +437,7 @@ body {
   color: rgba(255, 255, 255, 0.4);
 }
 
-/* Switch de tema */
+/* Switch alternador de tema */
 .theme-switch-row {
   display: flex;
   align-items: center;
@@ -499,7 +507,7 @@ body {
   transform: translateX(24px);
 }
 
-/* Área central de chat */
+/* Área principal de chat */
 .main-chat {
   flex: 1;
   display: flex;
@@ -517,9 +525,36 @@ body {
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 32px;
-  gap: 14px;
   z-index: 5;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.topbar-action-btn {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.topbar-action-btn:hover {
+  background: var(--panel-glass);
+  color: var(--wm-true-blue);
+  border-color: var(--wm-true-blue);
+  box-shadow: 0 2px 8px rgba(0, 83, 226, 0.12);
 }
 
 .agent-avatar {
@@ -572,7 +607,6 @@ body {
   gap: 20px;
 }
 
-/* Animación para burbujas de mensaje */
 @keyframes bubbleFadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -635,7 +669,7 @@ body {
   color: var(--wm-bentonville);
 }
 
-/* Indicador de pensando */
+/* Indicador de pensamiento */
 .typing-indicator {
   display: flex;
   align-items: center;
@@ -758,15 +792,360 @@ body {
   color: var(--text-main);
   width: 92%;
   max-width: 480px;
-  padding: 34px 30px;
+  padding: 32px 28px;
   border-radius: 22px;
   border: 1px solid var(--border-subtle);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
   text-align: left;
   animation: modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
-/* Estilos específicos para la tarjeta de diálogo personalizada */
+.onboarding-expanded {
+  max-width: 580px;
+}
+
+.onboarding-badge-icon {
+  font-size: 30px;
+  margin-bottom: 8px;
+}
+
+.onboarding-section {
+  background: rgba(0, 83, 226, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.section-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--wm-true-blue);
+  margin-bottom: 10px;
+}
+
+.fields-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Pasos del Wizard */
+.wizard-step {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Selector de Región */
+.region-selector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.region-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-canvas);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.region-card:hover {
+  border-color: var(--wm-everyday-blue);
+}
+
+.region-card.active {
+  border-color: var(--wm-true-blue);
+  background: rgba(0, 83, 226, 0.08);
+}
+
+.region-flag {
+  font-size: 22px;
+}
+
+.region-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.region-info strong {
+  font-size: 13.5px;
+  color: var(--text-main);
+}
+
+.region-info small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Filas con botón Examinar y validación */
+.input-browse-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.input-browse-row .input-text-wm {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.btn-browse {
+  background: rgba(0, 83, 226, 0.08);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  padding: 11px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.btn-browse:hover {
+  background: var(--wm-true-blue);
+  color: #FFFFFF;
+  border-color: var(--wm-true-blue);
+}
+
+.input-with-validation {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.input-with-validation .input-text-wm {
+  margin-bottom: 0;
+  padding-right: 120px;
+}
+
+.path-status-badge {
+  display: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  width: fit-content;
+}
+
+.path-status-badge.valid {
+  background: rgba(52, 199, 89, 0.16);
+  color: #2ECC71;
+  display: inline-block;
+}
+
+.path-status-badge.invalid {
+  background: rgba(235, 59, 90, 0.16);
+  color: #E84118;
+  display: inline-block;
+}
+
+.input-success {
+  border-color: #2ECC71 !important;
+}
+
+.input-error {
+  border-color: #E84118 !important;
+}
+
+.field-help-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+
+/* Barra de Progreso (SSE) */
+.progress-box-card {
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.progress-title-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.progress-percentage-text {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--wm-true-blue);
+}
+
+.progress-track {
+  width: 100%;
+  height: 7px;
+  background: rgba(0, 83, 226, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--wm-true-blue) 0%, var(--wm-everyday-blue) 100%);
+  border-radius: 10px;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.progress-current-file {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tooltip Botón Bloqueado */
+.tooltip-wrapper {
+  position: relative;
+  flex: 2;
+  display: flex;
+}
+
+.tooltip-wrapper button {
+  width: 100%;
+}
+
+.tooltip-wrapper[data-tooltip]:hover:after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 25, 32, 0.95);
+  color: #FFFFFF;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 1500;
+  pointer-events: none;
+}
+
+.btn-disabled {
+  background: #A0AAB8 !important;
+  color: #F4F6F9 !important;
+  cursor: not-allowed !important;
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+/* Banner de Notificación OneDrive */
+.sync-banner {
+  position: fixed;
+  top: 16px;
+  right: 24px;
+  z-index: 999;
+  background: var(--modal-bg);
+  border: 1px solid var(--wm-everyday-blue);
+  box-shadow: 0 10px 30px rgba(0, 83, 226, 0.18);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  animation: slideDownBanner 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownBanner {
+  from { opacity: 0; transform: translateY(-15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sync-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sync-banner-icon {
+  font-size: 20px;
+}
+
+.sync-banner-text strong {
+  font-size: 13px;
+  color: var(--text-main);
+  display: block;
+}
+
+.sync-banner-text p {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.sync-banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-sync-action {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-sync-action.primary {
+  background: var(--wm-true-blue);
+  color: #FFFFFF;
+}
+
+.btn-sync-action.secondary {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.btn-sync-action.secondary:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Botón Secundario Ajustes */
+.btn-secondary-action {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-secondary-action:hover {
+  background: rgba(0, 83, 226, 0.08);
+  border-color: var(--wm-true-blue);
+}
+
+/* Tarjeta de Diálogo Personalizado */
 .custom-dialog-card {
   max-width: 420px;
   text-align: center;
@@ -990,7 +1369,7 @@ body {
 .pronoun-group {
   display: flex;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 14px;
 }
 
 .btn-choice {
@@ -1134,4 +1513,34 @@ body {
   background: rgba(0, 83, 226, 0.05);
   padding: 8px 14px;
   border-radius: 0 8px 8px 0;
+}
+/* Nuevo contenedor para Perfil + Ajustes */
+.sidebar-footer-actions {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.user-profile-btn {
+  flex: 1; /* Para que tome el espacio sobrante */
+  /* El resto de tus estilos de user-profile-btn se mantienen igual */
+}
+
+/* El nuevo botón del engrane */
+.settings-icon-btn {
+  width: 52px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  color: var(--wm-white);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.settings-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(77, 189, 245, 0.3);
 }

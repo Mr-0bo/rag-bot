@@ -1,27 +1,78 @@
 # backend/config.py
 import os
+import sys
+from pathlib import Path
+import platformdirs
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
+def get_base_dir() -> Path:
+    """Retorna la ruta base de la aplicación tanto en desarrollo como empaquetada."""
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
+
+
 class Settings(BaseSettings):
-    # Google Gemini
+    # API Key de Gemini
     GEMINI_API_KEY: str
 
-    # Azure AI Search
-    AZURE_SEARCH_ENDPOINT: str
-    AZURE_SEARCH_KEY: str
-    AZURE_SEARCH_INDEX: str = "indice-normativas"
+    # Modelo para síntesis documental y citas normativas estrictas
+    GEMINI_MODEL_SYNTHESIS: str = "gemini-3.5-flash-lite"
 
-    # Azure Document Intelligence
-    AZURE_DOC_INTEL_ENDPOINT: str = ""
-    AZURE_DOC_INTEL_KEY: str = ""
+    # Modelo para reformulación y descomposición de subconsultas
+    GEMINI_MODEL_REWRITE: str = "gemini-3.1-flash-lite"
+
+    # Alias de compatibilidad hacia atrás
+    @property
+    def GEMINI_MODEL(self) -> str:
+        return self.GEMINI_MODEL_SYNTHESIS
+
+    # Configuración de Embeddings Locales (FastEmbed en CPU)
+    EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
+    EMBEDDING_DIMENSION: int = 384
+
+    # Rutas de almacenamiento local de usuario (No requieren permisos de Administrador)
+    APP_NAME: str = "CopilotoNormativas"
+    APP_AUTHOR: str = "ArquitecturaSistemas"
+
+    # Nombre de la colección en Qdrant
+    QDRANT_COLLECTION_NAME: str = "normativas_tecnicas"
+
+    # Carpeta de vigencia que se debe filtrar obligatoriamente
+    CARPETA_VIGENCIA: str = "2025-2026"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=get_base_dir() / ".env",
         env_file_encoding="utf-8",
         extra="ignore"
     )
 
-# Instancia global para importar en los demás módulos
+    @property
+    def data_dir(self) -> Path:
+        """Ruta en AppData (Windows) o Application Support (macOS)."""
+        path = Path(platformdirs.user_data_dir(self.APP_NAME, self.APP_AUTHOR))
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def qdrant_path(self) -> Path:
+        """Ruta local donde Qdrant persistirá los vectores en disco."""
+        path = self.data_dir / "qdrant_db"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def sqlite_path(self) -> Path:
+        """Ruta del archivo SQLite para tracking de hashes y metadatos."""
+        return self.data_dir / "normativas_metadata.db"
+
+    @property
+    def sqlite_url(self) -> str:
+        """URL de conexión para SQLAlchemy."""
+        return f"sqlite:///{self.sqlite_path}"
+
+
 try:
     settings = Settings()
 except Exception as e:

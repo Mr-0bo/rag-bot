@@ -3,15 +3,36 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from backend.routers import user, chat
+from backend.config import get_base_dir
+from backend.routers import user, chat, sync
+from boot import iniciar_sistema
 
-app = FastAPI(title="Asistente de Normativas Técnicas")
+app = FastAPI(
+    title="Copiloto de Normativas Técnicas",
+    description="Asistente local para consulta técnica y normativa",
+    version="1.0.0"
+)
 
-app.mount("/frontend", StaticFiles(directory="frontend"), name="static")
+# Resolución de rutas compatible con desarrollo y binarios congelados (PyInstaller)
+BASE_DIR = get_base_dir()
+FRONTEND_DIR = BASE_DIR / "frontend"
+
+if FRONTEND_DIR.exists():
+    app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
+
 
 @app.get("/")
 def home():
-    return FileResponse("frontend/index.html")
+    index_path = FRONTEND_DIR / "index.html"
+    return FileResponse(str(index_path))
 
+
+# Registro de routers modulares
 app.include_router(user.router)
 app.include_router(chat.router)
+app.include_router(sync.router)
+
+
+if __name__ == "__main__":
+    # Inicia con la animación de boot, apertura de navegador y servidor
+    iniciar_sistema(app_import_str="main:app", host="127.0.0.1", port=8000)

@@ -1,23 +1,28 @@
-# pip install -r requirements.txt
 # Servidor Web y API
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.7.0
 pydantic-settings>=2.2.0
 
-# Base de datos ORM
+# Base de datos ORM y Persistencia (SQLite)
 sqlalchemy>=2.0.0
+platformdirs>=4.2.0
 
-# LLM y Embeddings (Actual: Gemini | Futuro: OpenAI)
-google-generativeai>=0.7.0
-openai>=1.30.0
-tiktoken>=0.7.0
+# LLM en la Nube (Google Gemini - SDK Oficial)
+google-genai>=0.1.1
 
-# SDKs de Azure (Búsqueda Vectorial y Extracción de Documentos)
-azure-core>=1.30.0
-azure-search-documents==11.4.0
-azure-ai-documentintelligence==1.0.0b4
-azure-identity>=1.16.0
+# Base de Datos Vectorial Local y Embeddings
+qdrant-client>=1.9.0
+fastembed>=0.3.0
+numpy>=1.26.0
+
+
+# Extracción de Documentos
+PyMuPDF>=1.24.0
+
+# OCR de Respaldo (Opcional - Activar solo si procesas escaneos físicos no digitalizados)
+paddleocr>=2.7.0
+paddlepaddle>=2.6.0
 
 # Utilidades y Variables de Entorno
 python-dotenv>=1.0.0

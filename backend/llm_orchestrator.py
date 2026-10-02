@@ -1,118 +1,182 @@
 # backend/llm_orchestrator.py
 import re
-import google.generativeai as genai
+import numpy as np
+from typing import List, Dict, Optional
+from google import genai
+from google.genai import types
+
 from backend.config import settings
+from backend.search_service import get_embedding_model
 
-if settings and settings.GEMINI_API_KEY:
-    genai.configure(api_key=settings.GEMINI_API_KEY)
+# Singleton del cliente Gemini
+_client: Optional[genai.Client] = None
+
+# Configuración de referencias para clasificación conversacional local (100% en CPU con FastEmbed)
+PATRON_CORTESIAS = re.compile(
+    r'\b(hola|buenos\s+d[ií]as|buenas\s+(tardes|noches)|qu[eé]\s+tal|c[oó]mo\s+est[aá]s|'
+    r'muchas\s+gracias|gracias|de\s+acuerdo|ok|entendido|perfecto|excelente|vale|'
+    r'por\s+tu\s+ayuda|hasta\s+luego|adi[oó]s|nos\s+vemos)\b',
+    re.IGNORECASE
+)
+
+_FRASES_CONVERSACIONALES_REF = [
+    "hola, ¿cómo estás?",
+    "buenos días a todos",
+    "muchas gracias por tu ayuda",
+    "de acuerdo, entendido, gracias",
+    "hasta luego, que tengas buen día",
+    "perfecto, muchas gracias"
+]
+_VECTORES_CONV_REF = None
 
 
-def generar_embedding(texto: str) -> list[float]:
+def get_gemini_client() -> genai.Client:
+    """Inicializa o retorna la instancia del cliente oficial de Gemini."""
+    global _client
+    if _client is None:
+        if not settings or not settings.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
+        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    return _client
 
-    try:
-        resultado = genai.embed_content(
-            model="models/gemini-embedding-001",
-            content=texto,
-            task_type="retrieval_query"
-        )
-        return resultado["embedding"]
-    except Exception as e:
-        print(f"[ERROR GEMINI EMBEDDING] {e}")
-        return []
+
+def _get_vectores_conversacionales():
+    """Carga y almacena en caché los embeddings de las frases de cortesía."""
+    global _VECTORES_CONV_REF
+    if _VECTORES_CONV_REF is None:
+        modelo = get_embedding_model()
+        _VECTORES_CONV_REF = [list(modelo.embed([f]))[0] for f in _FRASES_CONVERSACIONALES_REF]
+    return _VECTORES_CONV_REF
 
 
 def clasificar_intencion(mensaje: str) -> str:
-
+    """
+    Clasifica 100% en local si la intención es CONVERSACIONAL o TECNICA,
+    combinando depuración de cortesías y similitud semántica con BGE-small.
+    """
     msg_limpio = mensaje.strip().lower()
-
-    saludos_directos = {
-        "hola", "hola!", "hola.", "buenos dias", "buenos días", "buenas tardes",
-        "buenas noches", "que tal", "qué tal", "como estas", "cómo estás",
-        "gracias", "muchas gracias", "adios", "adiós", "bye", "hasta luego"
-    }
-    msg_sin_signos = re.sub(r"[^\w\s]", "", msg_limpio)
-    if msg_sin_signos in saludos_directos:
+    if not msg_limpio:
         return "CONVERSACIONAL"
 
-    prompt_router = f"""Clasifica la intención del usuario.
-Responde ÚNICAMENTE con una palabra: "CONVERSACIONAL" o "TECNICA".
+    # 1. Extracción de residuo eliminando cortesías y puntuación
+    texto_sin_puntuacion = re.sub(r'[^\w\s]', '', msg_limpio)
+    residuo = PATRON_CORTESIAS.sub('', texto_sin_puntuacion).strip()
+    palabras_residuo = residuo.split()
 
-- CONVERSACIONAL: Saludos, despedidas, agradecimientos, halagos o charla trivial.
-- TECNICA: Preguntas sobre especificaciones, normas, conceptos, materiales, procesos o cualquier consulta de información o seguimiento técnico.
+    # Si tras quitar saludos no queda contenido sustancial, es meramente social
+    if len(palabras_residuo) == 0:
+        return "CONVERSACIONAL"
 
-Entrada: "{mensaje}"
-Clasificación:"""
-
-    try:
-        modelo = genai.GenerativeModel("gemini-3.1-flash-lite")
-        respuesta = modelo.generate_content(
-            prompt_router,
-            generation_config=genai.GenerationConfig(
-                temperature=0.0,
-                max_output_tokens=5
-            )
-        )
-        etiqueta = respuesta.text.strip().upper()
-        return "CONVERSACIONAL" if "CONVERSACIONAL" in etiqueta else "TECNICA"
-    except Exception as e:
-        print(f"[WARN ROUTER] Falló clasificación automática, asumiendo TECNICA: {e}")
+    # Si restan 4 o más palabras, contiene una consulta técnica formulada
+    if len(palabras_residuo) >= 4:
         return "TECNICA"
 
-
-def reformular_pregunta_con_historial(historial_mensajes: list[dict], pregunta_actual: str) -> str:
-
-    if not historial_mensajes:
-        return pregunta_actual
-
-    ultimos_turnos = historial_mensajes[-4:]
-    resumen_chat = "\n".join([f"{m['rol'].upper()}: {m['contenido']}" for m in ultimos_turnos])
-
-    prompt = f"""Historial reciente de la conversación:
-{resumen_chat}
-
-Pregunta de seguimiento del colaborador: "{pregunta_actual}"
-
-Instrucción: Reescribe la pregunta para que sea una consulta de búsqueda documental independiente y específica, incorporando el sujeto o concepto técnico del que venían hablando. Si la pregunta ya es autónoma y clara por sí misma, devuélvela exactamente igual.
-Responde ÚNICAMENTE con la consulta reescrita, sin introducciones ni comillas."""
-
+    # 2. Evaluación semántica con BGE-small para frases cortas (1 a 3 palabras remanentes)
     try:
-        modelo = genai.GenerativeModel("gemini-3.1-flash-lite")
-        resp = modelo.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                temperature=0.0,
-                max_output_tokens=45
-            )
+        modelo = get_embedding_model()
+        vec_pregunta = list(modelo.embed([msg_limpio]))[0]
+        vectores_ref = _get_vectores_conversacionales()
+
+        norm_pregunta = np.linalg.norm(vec_pregunta)
+        max_sim = max(
+            float(np.dot(vec_pregunta, v) / (norm_pregunta * np.linalg.norm(v)))
+            for v in vectores_ref
         )
-        consulta_optimizada = resp.text.strip()
-        return consulta_optimizada if consulta_optimizada else pregunta_actual
-    except Exception:
-        return pregunta_actual
+
+        if max_sim >= 0.70:
+            return "CONVERSACIONAL"
+    except Exception as e:
+        print(f"[WARN CLASIFICADOR LOCAL] Error al calcular similitud semántica: {e}")
+
+    return "TECNICA"
 
 
-def generar_respuesta_chat(system_prompt: str, user_prompt: str, historial: list[dict] = None) -> str:
+def reformular_pregunta_con_historial(historial_mensajes: List[Dict], pregunta_actual: str) -> List[str]:
+    """
+    Utiliza Gemini 3.1 Flash Lite para reformular y descomponer consultas.
+    - Resuelve correferencias y pronombres del historial.
+    - Si la pregunta es compuesta (ej. toca dos temas técnicos distintos),
+      la separa en subconsultas individuales para que la búsqueda vectorial
+      recupere ambos aspectos sin sesgos de embedding.
+    Retorna una lista de cadenas de búsqueda para Qdrant.
+    """
+    client = get_gemini_client()
+
+    historial_contexto = ""
+    if historial_mensajes:
+        ultimos_turnos = historial_mensajes[-3:]
+        historial_contexto = "Historial reciente de conversación:\n" + "\n".join(
+            [f"{m['rol'].upper()}: {m['contenido']}" for m in ultimos_turnos]
+        ) + "\n\n"
+
+    prompt = f"""Eres un optimizador de búsquedas vectoriales para documentación técnica de ingeniería.
+    Tu objetivo es analizar la última pregunta del usuario y convertirla en consultas directas y efectivas.
+
+    Reglas:
+    1. Resuelve pronombres, términos ambiguos o temas implícitos usando el historial previo.
+    2. Si la pregunta plantea dos o más aspectos técnicos distintos (preguntas compuestas), sepárala en subconsultas independientes, una por línea.
+    3. Para conceptos de fórmulas, modelos matemáticos o cosas específicas, genera consultas concisas basadas en palabras clave técnicas, sin añadir palabras redundantes.
+    4. Responde ÚNICAMENTE con las consultas resultantes (una por línea), sin numeración, viñetas, guiones ni texto adicional.
+
+    {historial_contexto}Pregunta actual: {pregunta_actual}
+    """
 
     try:
-        modelo = genai.GenerativeModel(
-            model_name="gemini-3.1-flash-lite",
-            system_instruction=system_prompt,
-            generation_config=genai.GenerationConfig(
+        modelo_rewrite = getattr(settings, "GEMINI_MODEL_REWRITE", "gemini-3.1-flash-lite")
+        respuesta = client.models.generate_content(
+            model=modelo_rewrite,
+            contents=prompt,
+            config=types.GenerateContentConfig(
                 temperature=0.0
             )
         )
+        texto_salida = respuesta.text.strip() if respuesta.text else ""
+        subconsultas = [
+            re.sub(r'^[0-9\.\-\*\s]+', '', linea).strip()
+            for linea in texto_salida.split("\n")
+            if linea.strip()
+        ]
+        return subconsultas if subconsultas else [pregunta_actual]
+    except Exception as e:
+        print(f"[WARN REFORMULACIÓN GEMINI 3.1] Error: {e}")
+        return [pregunta_actual]
 
-        chat_history = []
+
+def generar_respuesta_chat(system_prompt: str, user_prompt: str, historial: Optional[List[Dict]] = None) -> str:
+    """
+    Invoca Gemini 3.5 Flash Lite para redactar la respuesta técnica y estructurar las citas.
+    """
+    try:
+        client = get_gemini_client()
+        contents = []
+
         if historial:
             for h in historial:
                 rol_gemini = "user" if h["rol"] == "user" else "model"
-                chat_history.append({
-                    "role": rol_gemini,
-                    "parts": [h["contenido"]]
-                })
+                contents.append(
+                    types.Content(
+                        role=rol_gemini,
+                        parts=[types.Part.from_text(text=h["contenido"])]
+                    )
+                )
 
-        chat = modelo.start_chat(history=chat_history)
-        respuesta = chat.send_message(user_prompt)
-        return respuesta.text
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=user_prompt)]
+            )
+        )
+
+        modelo_synthesis = getattr(settings, "GEMINI_MODEL_SYNTHESIS", "gemini-3.5-flash-lite")
+        respuesta = client.models.generate_content(
+            model=modelo_synthesis,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.1
+            )
+        )
+        return respuesta.text if respuesta.text else "No se obtuvo respuesta del modelo."
     except Exception as e:
         print(f"[ERROR GEMINI CHAT] {e}")
-        return "Hubo un error de comunicación con el motor de IA."
+        return "Hubo un inconveniente al comunicarse con el motor de IA. Inténtalo nuevamente."

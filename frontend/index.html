@@ -3,22 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Normativas Técnicas</title>
-  <link rel="stylesheet" href="/frontend/css/styles.css?v=7">
+  <title>Agente de búsqueda</title>
+  <link rel="stylesheet" href="/frontend/css/styles.css?v=13">
 </head>
 <body>
 
-  <!-- Modal Disclaimer / Responsabilidad Técnica -->
+  <!-- ======================================================== -->
+  <!-- BANNER FLOTANTE DE ACTUALIZACIÓN DE ONEDRIVE             -->
+  <!-- ======================================================== -->
+  <div id="sync-notification-banner" class="sync-banner" style="display: none;">
+    <div class="sync-banner-content">
+      <span class="sync-banner-icon">🔄</span>
+      <div class="sync-banner-text">
+        <strong id="sync-banner-title">Cambios detectados en SharePoint/OneDrive</strong>
+        <p id="sync-banner-desc">Existen nuevos archivos o actualizaciones en tus carpetas normativas.</p>
+      </div>
+    </div>
+    <div class="sync-banner-actions">
+      <button type="button" class="btn-sync-action secondary" onclick="cerrarBannerSync()">Más tarde</button>
+      <button type="button" class="btn-sync-action primary" onclick="ejecutarSincronizacionDesdeBanner()">Sincronizar ahora</button>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL DISCLAIMER / RESPONSABILIDAD TÉCNICA               -->
+  <!-- ======================================================== -->
   <div id="disclaimer-modal" class="modal-backdrop" style="display: none;">
     <div class="disclaimer-dialog">
-      <div class="disclaimer-icon-badge">⚠️</div>
-      <h2>Aviso de Responsabilidad:</h2>
+      <div class="disclaimer-icon-badge">⚠</div>
+      <h2>Aviso de Responsabilidad Técnica</h2>
       <p class="disclaimer-text">
-        Este asistente utiliza modelos de inteligencia artificial para agilizar la consulta y localización de lineamientos, normas y criterios de diseño.
+        Este copiloto utiliza modelos locales de búsqueda semántica e inteligencia artificial para agilizar la localización de lineamientos, normas y criterios de diseño.
       </p>
       <div class="disclaimer-callout">
-        Los modelos de IA pueden interpretar datos de forma imprecisa o cometer errores.
-        <strong>Bajo ninguna circunstancia se debe dar por sentado el resultado arrojado</strong> para decisiones importantes sin antes contrastar y verificar directamente las fuentes y normativas oficiales vigentes.
+        Los modelos de IA pueden interpretar especificaciones de forma imprecisa.
+        <strong>Bajo ninguna circunstancia se debe dar por sentado el resultado arrojado</strong> para decisiones constructivas o de ingeniería sin contrastar directamente las fuentes normativas oficiales vigentes citadas.
       </div>
 
       <div class="disclaimer-footer">
@@ -32,33 +51,217 @@
     </div>
   </div>
 
-  <!-- Modal Onboarding / Configuración de Perfil -->
-  <div id="onboarding-modal" class="modal-backdrop" style="display: none;">
-    <div class="onboarding-dialog">
-      <h2 id="modal-title">Configuración de perfil</h2>
-      <p id="modal-desc">Personaliza tu experiencia.</p>
+  <!-- ======================================================== -->
+  <!-- MODAL ONBOARDING / WIZARD EN DOS PASOS (BLOQUEANTE)      -->
+  <!-- ======================================================== -->
+  <div id="onboarding-modal" class="modal-backdrop" style="display: none;" data-blocking="true">
+    <div class="onboarding-dialog onboarding-expanded">
+      <div class="onboarding-badge-icon" id="wizard-badge-icon">👋</div>
+      <h2 id="modal-title">¡Bienvenido!</h2>
+      <p id="modal-desc">Configuremos tu perfil para empezar.</p>
 
-      <label class="field-label" for="user-name-input">Tu nombre o apellido</label>
-      <input type="text" id="user-name-input" class="input-text-wm" placeholder="Ej. Mario García" maxlength="30">
+      <div id="wizard-step-1" class="wizard-step">
+        <label class="field-label" for="user-name-input">Tu nombre o alias *</label>
+        <input type="text" id="user-name-input" class="input-text-wm" placeholder="Ej. Mario García" maxlength="30">
 
-      <label class="field-label" for="agent-name-input">Nombre para tu agente</label>
-      <input type="text" id="agent-name-input" class="input-text-wm" placeholder="Ej. Nova, Jarvis" maxlength="25">
+        <label class="field-label" for="agent-name-input" style="margin-top: 10px;">Nombre para tu copiloto</label>
+        <input type="text" id="agent-name-input" class="input-text-wm" placeholder="Ej. Copiloto Técnico" maxlength="25">
 
-      <label class="field-label">Trato preferido</label>
-      <div class="pronoun-group">
-        <button type="button" class="btn-choice" id="pronoun-el" onclick="seleccionarPronombre('el', this)">Él</button>
-        <button type="button" class="btn-choice" id="pronoun-ella" onclick="seleccionarPronombre('ella', this)">Ella</button>
-        <button type="button" class="btn-choice active" id="pronoun-neutro" onclick="seleccionarPronombre('neutro', this)">Prefiero no decirlo</button>
+        <label class="field-label" style="margin-top: 10px;">Trato gramatical preferido</label>
+        <div class="pronoun-group">
+          <button type="button" class="btn-choice" id="pronoun-el" onclick="seleccionarPronombre('el', this)">Él</button>
+          <button type="button" class="btn-choice" id="pronoun-ella" onclick="seleccionarPronombre('ella', this)">Ella</button>
+          <button type="button" class="btn-choice active" id="pronoun-neutro" onclick="seleccionarPronombre('neutro', this)">Neutro / Indistinto</button>
+        </div>
+
+        <div class="modal-actions-row" style="margin-top: 24px;">
+          <button type="button" class="btn-cancel" id="btn-cancel-profile" style="display: none;" onclick="cerrarModalPerfil()">Cancelar</button>
+          <button type="button" class="btn-confirm" id="btn-wizard-next" onclick="avanzarPaso2()">Continuar →</button>
+        </div>
       </div>
 
-      <div class="modal-actions-row">
-        <button type="button" class="btn-cancel" id="btn-cancel-profile" style="display: none;" onclick="cerrarModalPerfil()">Cancelar</button>
-        <button type="button" class="btn-confirm" onclick="guardarPerfil()">Guardar</button>
+      <div id="wizard-step-2" class="wizard-step" style="display: none;">
+        <label class="field-label">Región activa de consulta *</label>
+        <div class="region-selector-grid" style="margin-bottom: 16px;">
+          <div class="region-card active" id="region-card-mexico" onclick="seleccionarRegion('mexico')">
+            <span class="region-flag">🇲🇽</span>
+            <div class="region-info">
+              <strong>México</strong>
+              <small>Criterios y normas nacionales</small>
+            </div>
+          </div>
+          <div class="region-card" id="region-card-cam" onclick="seleccionarRegion('centroamerica')">
+            <span class="region-flag">🌎</span>
+            <div class="region-info">
+              <strong>Centroamérica</strong>
+              <small>Criterios técnicos regionales</small>
+            </div>
+          </div>
+        </div>
+
+        <label class="field-label">Repositorio de OneDrive sincronizado *</label>
+        <p class="field-help-text">
+          Selecciona tus carpetas con vigencia <strong>2025-2026</strong>. Solo se procesarán archivos <strong>.PDF</strong>.
+        </p>
+
+        <label class="field-label" for="folder-mandatory-input" style="font-size: 11.5px;">Carpeta principal (Obligatoria) *</label>
+        <div class="input-browse-row">
+          <input type="text" id="folder-mandatory-input" class="input-text-wm" placeholder="Ruta sincronizada de OneDrive..." onchange="validarRutaInput(this)">
+          <button type="button" class="btn-browse" onclick="abrirSelectorDirectorio('folder-mandatory-input')">Examinar...</button>
+        </div>
+        <span class="path-status-badge" id="badge-mandatory"></span>
+
+        <label class="field-label" for="folder-opc1-input" style="font-size: 11.5px; margin-top: 10px;">Carpeta adicional 1 (Opcional)</label>
+        <div class="input-browse-row">
+          <input type="text" id="folder-opc1-input" class="input-text-wm" placeholder="Ruta adicional..." onchange="validarRutaInput(this)">
+          <button type="button" class="btn-browse" onclick="abrirSelectorDirectorio('folder-opc1-input')">Examinar...</button>
+        </div>
+        <span class="path-status-badge" id="badge-opc1"></span>
+
+        <label class="field-label" for="folder-opc2-input" style="font-size: 11.5px; margin-top: 10px;">Carpeta adicional 2 (Opcional)</label>
+        <div class="input-browse-row">
+          <input type="text" id="folder-opc2-input" class="input-text-wm" placeholder="Ruta adicional..." onchange="validarRutaInput(this)">
+          <button type="button" class="btn-browse" onclick="abrirSelectorDirectorio('folder-opc2-input')">Examinar...</button>
+        </div>
+        <span class="path-status-badge" id="badge-opc2"></span>
+
+        <div id="onboarding-progress-container" class="progress-box-card" style="display: none; margin-top: 16px;">
+          <div class="progress-header">
+            <span class="progress-title-text" id="progress-status-title">Indexando documentos...</span>
+            <span class="progress-percentage-text" id="progress-percentage">0%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <p class="progress-current-file" id="progress-current-filename">Iniciando lectura...</p>
+        </div>
+
+        <div class="modal-actions-row" style="margin-top: 24px;">
+          <button type="button" class="btn-cancel" onclick="volverPaso1()">← Volver</button>
+          <div class="tooltip-wrapper" id="btn-start-tooltip" data-tooltip="Debes validar la carpeta obligatoria para comenzar">
+            <button type="button" class="btn-confirm btn-disabled" id="btn-start-app" onclick="iniciarGuardadoEIndexacion()">
+              Indexar y Comenzar
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Modal Renombrar Chat -->
+  <!-- ======================================================== -->
+  <!-- MODAL CONFIGURACIÓN TÉCNICA (DESDE SIDEBAR)              -->
+  <!-- ======================================================== -->
+  <div id="settings-modal" class="modal-backdrop" style="display: none;">
+    <div class="onboarding-dialog onboarding-expanded">
+      <h2>Ajustes y Repositorios</h2>
+      <p>Modifica tus rutas sincronizadas de OneDrive o busca cambios en SharePoint.</p>
+
+      <label class="field-label">Región activa</label>
+      <div class="region-selector-grid" style="margin-bottom: 16px;">
+        <div class="region-card" id="settings-region-mexico" onclick="cambiarRegionAjustes('mexico')">
+          <span class="region-flag">🇲🇽</span>
+          <div class="region-info"><strong>México</strong></div>
+        </div>
+        <div class="region-card" id="settings-region-cam" onclick="cambiarRegionAjustes('centroamerica')">
+          <span class="region-flag">🌎</span>
+          <div class="region-info"><strong>Centroamérica</strong></div>
+        </div>
+      </div>
+
+      <label class="field-label" for="settings-mandatory-input">Carpeta OneDrive (Obligatoria) *</label>
+      <div class="input-browse-row">
+        <input type="text" id="settings-mandatory-input" class="input-text-wm" onchange="validarRutaInput(this)">
+        <button type="button" class="btn-browse" onclick="abrirSelectorDirectorio('settings-mandatory-input')">Examinar...</button>
+      </div>
+
+      <label class="field-label" for="settings-opc1-input" style="margin-top: 10px;">Carpeta adicional 1</label>
+      <div class="input-browse-row">
+        <input type="text" id="settings-opc1-input" class="input-text-wm" onchange="validarRutaInput(this)">
+        <button type="button" class="btn-browse" onclick="abrirSelectorDirectorio('settings-opc1-input')">Examinar...</button>
+      </div>
+
+      <label class="field-label" for="settings-opc2-input" style="margin-top: 10px;">Carpeta adicional 2</label>
+      <div class="input-browse-row">
+        <input type="text" id="settings-opc2-input" class="input-text-wm" onchange="validarRutaInput(this)">
+        <button type="button" class="btn-browse" onclick="abrirSelectorDirectorio('settings-opc2-input')">Examinar...</button>
+      </div>
+
+      <div id="settings-progress-container" class="progress-box-card" style="display: none; margin-top: 14px;">
+        <div class="progress-header">
+          <span id="settings-progress-title">Actualizando base vectorial...</span>
+          <span id="settings-progress-percentage">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="settings-bar-fill" style="width: 0%;"></div>
+        </div>
+        <p class="progress-current-file" id="settings-current-file">Verificando cambios...</p>
+      </div>
+
+      <div class="modal-actions-row" style="margin-top: 22px; justify-content: space-between;">
+        <button type="button" class="btn-secondary-action" onclick="comprobarActualizacionesManuales()">
+          🔍 Buscar cambios
+        </button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn-cancel" onclick="cerrarModalAjustes()">Cerrar</button>
+          <button type="button" class="btn-confirm" onclick="guardarAjustesDirectorios()">Guardar cambios</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL PERFIL DE USUARIO                                  -->
+  <!-- ======================================================== -->
+  <div id="profile-modal" class="modal-backdrop" style="display: none;">
+    <div class="onboarding-dialog">
+      <h2>Perfil de Usuario</h2>
+      <p>Modifica tu identidad y el nombre de tu asistente.</p>
+
+      <label class="field-label" for="profile-name-input">Tu nombre o alias *</label>
+      <input type="text" id="profile-name-input" class="input-text-wm" maxlength="30">
+
+      <label class="field-label" for="profile-agent-input" style="margin-top: 10px;">Nombre para tu copiloto</label>
+      <input type="text" id="profile-agent-input" class="input-text-wm" maxlength="25">
+
+      <label class="field-label" style="margin-top: 10px;">Trato gramatical preferido</label>
+      <div class="pronoun-group">
+        <button type="button" class="btn-choice" id="profile-pronoun-el" onclick="seleccionarPronombrePerfil('el', this)">Él</button>
+        <button type="button" class="btn-choice" id="profile-pronoun-ella" onclick="seleccionarPronombrePerfil('ella', this)">Ella</button>
+        <button type="button" class="btn-choice" id="profile-pronoun-neutro" onclick="seleccionarPronombrePerfil('neutro', this)">Neutro</button>
+      </div>
+
+      <div class="modal-actions-row" style="margin-top: 24px;">
+        <button type="button" class="btn-cancel" onclick="cerrarModalPerfil()">Cancelar</button>
+        <button type="button" class="btn-confirm" onclick="guardarAjustesPerfil()">Guardar perfil</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL DE IMPORTACIÓN (NUEVO)                             -->
+  <!-- ======================================================== -->
+  <div id="import-modal" class="modal-backdrop" style="display: none;">
+    <div class="onboarding-dialog">
+      <div class="disclaimer-icon-badge" style="font-size: 32px; color: var(--wm-true-blue); margin-bottom: 8px;">📥</div>
+      <h2>Importar Consulta</h2>
+      <p>Selecciona un archivo <strong>.json</strong> con un historial previamente exportado para restaurarlo.</p>
+
+      <label class="field-label" for="import-path-input" style="margin-top: 16px;">Ruta del archivo JSON *</label>
+      <div class="input-browse-row">
+        <input type="text" id="import-path-input" class="input-text-wm" placeholder="Ej. /Usuarios/mario/Descargas/chat.json">
+        <button type="button" class="btn-browse" onclick="abrirSelectorArchivoNativo()">Examinar...</button>
+      </div>
+
+      <div class="modal-actions-row" style="margin-top: 24px;">
+        <button type="button" class="btn-cancel" onclick="cerrarModalImportar()">Cancelar</button>
+        <button type="button" class="btn-confirm" onclick="ejecutarImportacion()">Importar chat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODALES DE SESIÓN (RENOMBRAR, EXPORTAR, DIÁLOGOS)        -->
+  <!-- ======================================================== -->
   <div id="rename-modal" class="modal-backdrop" style="display: none;">
     <div class="custom-dialog-card">
       <div class="custom-dialog-badge">✏️</div>
@@ -72,12 +275,10 @@
     </div>
   </div>
 
-  <!-- Modal Exportar / Compartir Chat -->
   <div id="export-modal" class="modal-backdrop" style="display: none;">
     <div class="export-dialog">
       <h2>Exportar consulta</h2>
       <p>Selecciona el formato en el que deseas descargar la conversación:</p>
-
       <div class="export-options-grid">
         <div class="export-card" onclick="ejecutarExportacion('html')">
           <div class="export-icon">🌐</div>
@@ -86,7 +287,6 @@
             <span class="export-desc">Diseño limpio y estilizado con el tema visual actual (claro/oscuro).</span>
           </div>
         </div>
-
         <div class="export-card" onclick="ejecutarExportacion('json')">
           <div class="export-icon">{ }</div>
           <div class="export-info">
@@ -95,20 +295,17 @@
           </div>
         </div>
       </div>
-
       <div class="modal-actions-row" style="margin-top: 20px;">
         <button type="button" class="btn-cancel" onclick="cerrarModalExportar()">Cancelar</button>
       </div>
     </div>
   </div>
 
-  <!-- Modal Diálogo Personalizado -->
   <div id="custom-dialog-modal" class="modal-backdrop" style="display: none;">
     <div class="custom-dialog-card">
       <div class="custom-dialog-badge" id="custom-dialog-icon">⚠️</div>
       <h2 id="custom-dialog-title">Confirmar acción</h2>
       <p id="custom-dialog-msg">¿Estás seguro de continuar?</p>
-
       <div class="modal-actions-row" style="margin-top: 22px;">
         <button type="button" class="btn-cancel" id="custom-dialog-cancel-btn">Cancelar</button>
         <button type="button" class="btn-confirm" id="custom-dialog-confirm-btn">Confirmar</button>
@@ -116,20 +313,23 @@
     </div>
   </div>
 
-  <!-- Contenedor General -->
+  <!-- ======================================================== -->
+  <!-- CONTENEDOR GENERAL DE LA APLICACIÓN                      -->
+  <!-- ======================================================== -->
   <div class="app-wrapper">
-    <!-- Sidebar con Bento Blue -->
+    <!-- Sidebar -->
     <aside class="sidebar">
       <div class="brand-badge">
-        <span class="brand-title">Normativas Técnicas</span>
+        <span class="brand-title">AGENTE DE BÚSQUEDA</span>
+        <span class="region-pill" id="sidebar-region-badge">MEX</span>
       </div>
 
-      <!-- Barra de acciones: Nueva consulta + Bote de basura -->
+      <!-- Barra de acciones: Nueva consulta + Limpiar chats -->
       <div class="sidebar-actions-row">
         <button class="btn-new-chat" onclick="crearSesion()">
           <span>+</span> Nueva consulta
         </button>
-        <button class="btn-clear-chats" onclick="eliminarTodosLosChats()" title="Eliminar todos los chats">
+        <button class="btn-clear-chats" onclick="eliminarTodosLosChats()" title="Eliminar todas las conversaciones">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
@@ -145,17 +345,24 @@
 
       <!-- Footer inferior de la barra lateral -->
       <div class="sidebar-footer">
-        <button class="user-profile-btn" onclick="abrirModalPerfil()" title="Editar perfil">
-          <div class="user-avatar" id="sidebar-user-avatar">U</div>
-          <div class="user-meta">
-            <span class="user-name-text" id="sidebar-user-name">Usuario</span>
-            <span class="user-sub-text" id="sidebar-user-pronoun">Configuración</span>
-          </div>
-          <span class="profile-arrow">›</span>
-        </button>
+        <div class="sidebar-footer-actions">
+          <button class="user-profile-btn" onclick="abrirModalPerfil()" title="Editar perfil">
+            <div class="user-avatar" id="sidebar-user-avatar">M</div>
+            <div class="user-meta">
+              <span class="user-name-text" id="sidebar-user-name">Mario García</span>
+              <span class="user-sub-text" id="sidebar-user-pronoun">Trato: Él</span>
+            </div>
+          </button>
+          <button class="settings-icon-btn" onclick="abrirModalAjustes()" title="Ajustes de repositorios">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+        </div>
 
         <div class="theme-switch-row">
-          <span class="theme-label" id="theme-status-text">Modo claro</span>
+          <span class="theme-label" id="theme-status-text">Modo oscuro</span>
           <label class="theme-slider-switch" title="Alternar tema">
             <input type="checkbox" id="theme-toggle-check" onchange="alternarTema(this.checked)">
             <span class="slider-round">
@@ -167,37 +374,48 @@
       </div>
     </aside>
 
-    <!-- Ventana Principal -->
+    <!-- Ventana Principal del Chat -->
     <main class="main-chat">
       <!-- Topbar Fija -->
       <header class="chat-topbar">
-        <div class="agent-avatar" id="agent-avatar-icon"></div>
-        <div class="topbar-info">
-          <span class="topbar-name" id="topbar-agent-name">Asistente</span>
-          <span class="topbar-status"><span class="status-dot"></span> Activo</span>
+        <div class="topbar-left">
+          <div class="agent-avatar" id="agent-avatar-icon"></div>
+          <div class="topbar-info">
+            <span class="topbar-name" id="topbar-agent-name">Copiloto Técnico</span>
+            <span class="topbar-status"><span class="status-dot"></span> Disponible</span>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Botón Superior: AHORA ES EXCLUSIVO PARA IMPORTAR -->
+          <button class="topbar-action-btn" onclick="abrirModalImportar()" title="Importar un chat">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Ícono modificado apuntando hacia abajo a la bandeja -->
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 13 7 8"></polyline>
+              <line x1="12" y1="13" x2="12" y2="3"></line>
+            </svg>
+          </button>
         </div>
       </header>
 
-      <!-- Mensajes -->
       <div class="chat-scroll" id="chat-scroll"></div>
 
-      <!-- Dock inferior flotante -->
       <div class="input-dock">
         <div class="input-box-wrapper">
           <div class="input-box">
-            <input type="text" id="query-input" placeholder="Consulta especificaciones, medidas o lineamientos..." onkeydown="alPresionarTecla(event)">
-            <button class="btn-send" onclick="enviarMensaje()">↑</button>
+            <input type="text" id="query-input" placeholder="Realiza una consulta..." onkeydown="alPresionarTecla(event)">
+            <button class="btn-send" id="btn-send-query" onclick="enviarMensaje()">↑</button>
           </div>
           <p class="input-disclaimer-note">
-            Este asistente utliza modelos de Inteligencia Artificial y puede cometer errores. Verifica siempre las especificaciones en las fuentes oficiales antes de tomar decisiones.
+            Este agente utiliza modelos de Inteligencia Artificial y puede cometer errores. Verifica siempre las especificaciones en las fuentes oficiales antes de tomar decisiones.
           </p>
         </div>
       </div>
     </main>
   </div>
 
-  <!-- Librería para renderizar Markdown -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="/frontend/js/app.js?v=7"></script>
+  <script src="/frontend/js/app.js?v=13"></script>
 </body>
 </html>

@@ -8,7 +8,8 @@ if (!userId) {
 
 let sesionActivaId = null;
 let pronombreSeleccionado = "neutro";
-let nombreAgenteGlobal = "Asistente Técnico";
+let regionSeleccionada = "mexico";
+let nombreAgenteGlobal = "Copiloto Técnico";
 let datosUsuarioCache = null;
 
 // Control de Sesión a exportar / contextual
@@ -17,7 +18,16 @@ let sesionExportarTitulo = "consulta";
 let sesionRenombrarId = null;
 let menuContextualActivo = null;
 
-// Sistema de Diálogo Personalizado
+// Control de validación de rutas
+const estadoRutasValidas = {
+  obligatoria: false,
+  opc1: true,
+  opc2: true
+};
+
+// ==========================================
+// DIÁLOGO PERSONALIZADO
+// ==========================================
 function mostrarDialogo({
   icono = "⚠️",
   titulo = "Confirmación",
@@ -69,7 +79,9 @@ function mostrarDialogo({
   });
 }
 
-// Inicialización de Tema
+// ==========================================
+// GESTIÓN DE TEMA (CLARO / OSCURO)
+// ==========================================
 function inicializarTema() {
   const guardado = localStorage.getItem("wm_theme") || "light";
   document.documentElement.setAttribute("data-theme", guardado);
@@ -89,12 +101,172 @@ function alternarTema(esOscuro) {
   if (label) label.innerText = esOscuro ? "Modo oscuro" : "Modo claro";
 }
 
+// ==========================================
+// NAVEGACIÓN ONBOARDING (WIZARD EN 2 PASOS)
+// ==========================================
+function avanzarPaso2() {
+  const nombre = document.getElementById("user-name-input").value.trim();
+  if (!nombre) {
+    mostrarDialogo({
+      icono: "ℹ️",
+      titulo: "Nombre requerido",
+      mensaje: "Por favor escribe tu nombre para continuar.",
+      textoConfirmar: "Entendido",
+      soloAlerta: true
+    });
+    return;
+  }
+
+  document.getElementById("wizard-step-1").style.display = "none";
+  document.getElementById("wizard-step-2").style.display = "block";
+  document.getElementById("wizard-badge-icon").innerText = "📁";
+  document.getElementById("modal-title").innerText = "Repositorio Normativo";
+  document.getElementById("modal-desc").innerText = "Selecciona tu región y vincula tus carpetas sincronizadas de OneDrive.";
+
+  verificarHabilitacionBotonInicio();
+}
+
+function volverPaso1() {
+  document.getElementById("wizard-step-2").style.display = "none";
+  document.getElementById("wizard-step-1").style.display = "block";
+  document.getElementById("wizard-badge-icon").innerText = "👋";
+  document.getElementById("modal-title").innerText = "¡Bienvenido!";
+  document.getElementById("modal-desc").innerText = "Configuremos tu perfil para empezar.";
+}
+
+// ==========================================
+// SELECCIÓN DE PREFERENCIAS (ONBOARDING)
+// ==========================================
 function seleccionarPronombre(valor, btn) {
   pronombreSeleccionado = valor;
-  document.querySelectorAll('.btn-choice').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.pronoun-group .btn-choice').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
 }
 
+function seleccionarRegion(region) {
+  regionSeleccionada = region;
+  document.getElementById("region-card-mexico")?.classList.toggle("active", region === "mexico");
+  document.getElementById("region-card-cam")?.classList.toggle("active", region === "centroamerica");
+  actualizarBadgeRegionSidebar(region);
+}
+
+function actualizarBadgeRegionSidebar(region) {
+  const badge = document.getElementById("sidebar-region-badge");
+  if (badge) {
+    badge.innerText = region === "mexico" ? "MEX" : "CAM";
+    badge.title = region === "mexico" ? "Normativas México" : "Normativas Centroamérica";
+  }
+}
+
+// ==========================================
+// EXPLORADOR NATIVO Y VALIDACIÓN DE ONEDRIVE
+// ==========================================
+async function abrirSelectorDirectorio(targetInputId) {
+  try {
+    const res = await fetch("/api/browse-directory", { method: "POST" });
+    const data = await res.json();
+    if (data.ruta) {
+      const input = document.getElementById(targetInputId);
+      if (input) {
+        input.value = data.ruta;
+        await validarRutaInput(input);
+      }
+    }
+  } catch (err) {
+    console.error("Error al abrir diálogo de selección:", err);
+  }
+}
+
+async function validarRutaInput(inputEl) {
+  const ruta = inputEl.value.trim();
+  const idInput = inputEl.id;
+  const esObligatorio = idInput.includes("mandatory");
+  const badgeId = idInput === "folder-mandatory-input" ? "badge-mandatory"
+                : idInput === "folder-opc1-input" ? "badge-opc1"
+                : idInput === "folder-opc2-input" ? "badge-opc2" : null;
+  const badgeEl = badgeId ? document.getElementById(badgeId) : null;
+
+  if (!ruta) {
+    if (esObligatorio) {
+      marcarCampoEstado(inputEl, badgeEl, false, "Obligatorio");
+      estadoRutasValidas.obligatoria = false;
+    } else {
+      limpiarCampoEstado(inputEl, badgeEl);
+      if (idInput.includes("opc1")) estadoRutasValidas.opc1 = true;
+      if (idInput.includes("opc2")) estadoRutasValidas.opc2 = true;
+    }
+    verificarHabilitacionBotonInicio();
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/validate-directory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ruta })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      inputEl.value = data.ruta_normalizada;
+      marcarCampoEstado(inputEl, badgeEl, true, "✓ OneDrive Válido");
+      if (esObligatorio) estadoRutasValidas.obligatoria = true;
+      if (idInput.includes("opc1")) estadoRutasValidas.opc1 = true;
+      if (idInput.includes("opc2")) estadoRutasValidas.opc2 = true;
+    } else {
+      const err = await res.json();
+      marcarCampoEstado(inputEl, badgeEl, false, err.detail || "Ruta inválida");
+      if (esObligatorio) estadoRutasValidas.obligatoria = false;
+      if (idInput.includes("opc1")) estadoRutasValidas.opc1 = false;
+      if (idInput.includes("opc2")) estadoRutasValidas.opc2 = false;
+    }
+  } catch (e) {
+    marcarCampoEstado(inputEl, badgeEl, false, "Error de validación");
+    if (esObligatorio) estadoRutasValidas.obligatoria = false;
+  }
+
+  verificarHabilitacionBotonInicio();
+}
+
+function marcarCampoEstado(inputEl, badgeEl, esValido, mensaje) {
+  inputEl.classList.toggle("input-success", esValido);
+  inputEl.classList.toggle("input-error", !esValido);
+  if (badgeEl) {
+    badgeEl.innerText = mensaje;
+    badgeEl.className = `path-status-badge ${esValido ? 'valid' : 'invalid'}`;
+    badgeEl.style.display = "inline-block";
+  }
+}
+
+function limpiarCampoEstado(inputEl, badgeEl) {
+  inputEl.classList.remove("input-success", "input-error");
+  if (badgeEl) {
+    badgeEl.innerText = "";
+    badgeEl.style.display = "none";
+  }
+}
+
+function verificarHabilitacionBotonInicio() {
+  const nombre = document.getElementById("user-name-input")?.value.trim();
+  const puedeHabilitar = Boolean(nombre && estadoRutasValidas.obligatoria && estadoRutasValidas.opc1 && estadoRutasValidas.opc2);
+
+  const btn = document.getElementById("btn-start-app");
+  const tooltipWrapper = document.getElementById("btn-start-tooltip");
+
+  if (btn) {
+    if (puedeHabilitar) {
+      btn.classList.remove("btn-disabled");
+      if (tooltipWrapper) tooltipWrapper.removeAttribute("data-tooltip");
+    } else {
+      btn.classList.add("btn-disabled");
+      if (tooltipWrapper) tooltipWrapper.setAttribute("data-tooltip", "Debes validar la carpeta obligatoria de OneDrive para comenzar");
+    }
+  }
+}
+
+// ==========================================
+// FLUJO DE INICIALIZACIÓN
+// ==========================================
 async function inicializar() {
   inicializarTema();
 
@@ -109,6 +281,8 @@ async function inicializar() {
       cerrarMenuContextual();
     }
   });
+
+  document.getElementById("user-name-input")?.addEventListener("input", verificarHabilitacionBotonInicio);
 
   try {
     const res = await fetch(`/api/user/${userId}`);
@@ -151,14 +325,21 @@ async function aceptarDisclaimer() {
 }
 
 async function procederPostDisclaimer() {
-  if (!datosUsuarioCache || !datosUsuarioCache.registrado) {
+  if (!datosUsuarioCache || !datosUsuarioCache.onboarding_completado) {
     const onboarding = document.getElementById("onboarding-modal");
-    if (onboarding) onboarding.style.display = "flex";
+    if (onboarding) {
+      volverPaso1();
+      onboarding.style.display = "flex";
+    }
   } else {
-    nombreAgenteGlobal = datosUsuarioCache.nombre_agente || "Asistente Técnico";
+    nombreAgenteGlobal = datosUsuarioCache.nombre_agente || "Copiloto Técnico";
+    regionSeleccionada = datosUsuarioCache.region || "mexico";
     actualizarTopbar(nombreAgenteGlobal);
     actualizarSidebarPerfil(datosUsuarioCache.nombre, datosUsuarioCache.pronombre);
+    actualizarBadgeRegionSidebar(regionSeleccionada);
     await cargarSesiones();
+
+    setTimeout(comprobarSincronizacionFondo, 1500);
   }
 }
 
@@ -184,82 +365,283 @@ function actualizarSidebarPerfil(nombreUsuario, pronombre) {
   }
 }
 
-function abrirModalPerfil() {
-  const modal = document.getElementById("onboarding-modal");
-  const title = document.getElementById("modal-title");
-  const desc = document.getElementById("modal-desc");
-  const btnCancel = document.getElementById("btn-cancel-profile");
+// ==========================================
+// INGESTA EN TIEMPO REAL CON SSE (SERVER-SENT EVENTS)
+// ==========================================
+async function iniciarGuardadoEIndexacion() {
+  const btn = document.getElementById("btn-start-app");
+  if (btn.classList.contains("btn-disabled")) return;
 
-  if (title) title.innerText = "Editar perfil";
-  if (desc) desc.innerText = "Modifica tus datos y el nombre de tu asistente.";
-  if (btnCancel) btnCancel.style.display = "block";
+  const nombre = document.getElementById("user-name-input").value.trim();
+  const nombreAgente = document.getElementById("agent-name-input").value.trim() || "Copiloto Técnico";
+  const mandatory = document.getElementById("folder-mandatory-input").value.trim();
+  const opc1 = document.getElementById("folder-opc1-input")?.value.trim() || null;
+  const opc2 = document.getElementById("folder-opc2-input")?.value.trim() || null;
 
-  if (datosUsuarioCache) {
-    document.getElementById("user-name-input").value = datosUsuarioCache.nombre || "";
-    document.getElementById("agent-name-input").value = datosUsuarioCache.nombre_agente || "";
-    const p = datosUsuarioCache.pronombre || "neutro";
-    seleccionarPronombre(p, document.getElementById(`pronoun-${p}`));
+  try {
+    btn.classList.add("btn-disabled");
+    const res = await fetch("/api/user/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: userId,
+        nombre: nombre,
+        pronombre: pronombreSeleccionado,
+        nombre_agente: nombreAgente,
+        region: regionSeleccionada,
+        directorio_obligatorio: mandatory,
+        directorio_opcional_1: opc1,
+        directorio_opcional_2: opc2
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Error guardando configuración");
+    }
+
+    datosUsuarioCache = {
+      registrado: true,
+      onboarding_completado: true,
+      nombre,
+      pronombre: pronombreSeleccionado,
+      nombre_agente: nombreAgente,
+      region: regionSeleccionada,
+      directorio_obligatorio: mandatory,
+      directorio_opcional_1: opc1,
+      directorio_opcional_2: opc2
+    };
+
+    nombreAgenteGlobal = nombreAgente;
+    actualizarTopbar(nombreAgenteGlobal);
+    actualizarSidebarPerfil(nombre, pronombreSeleccionado);
+    actualizarBadgeRegionSidebar(regionSeleccionada);
+
+    const progressBox = document.getElementById("onboarding-progress-container");
+    progressBox.style.display = "block";
+
+    conectarStreamSincronizacion({
+      onProgress: (progreso, mensaje, archivo) => {
+        document.getElementById("progress-bar-fill").style.width = `${progreso}%`;
+        document.getElementById("progress-percentage").innerText = `${progreso}%`;
+        if (archivo) {
+          document.getElementById("progress-current-filename").innerText = `Indexando: ${archivo}`;
+        }
+      },
+      onComplete: async () => {
+        document.getElementById("progress-bar-fill").style.width = "100%";
+        document.getElementById("progress-percentage").innerText = "100%";
+        document.getElementById("progress-status-title").innerText = "¡Todo listo!";
+        document.getElementById("progress-current-filename").innerText = "Base de datos vectorial generada correctamente.";
+
+        setTimeout(async () => {
+          document.getElementById("onboarding-modal").style.display = "none";
+          await cargarSesiones();
+        }, 800);
+      },
+      onError: async (errMsg) => {
+        btn.classList.remove("btn-disabled");
+        await mostrarDialogo({
+          icono: "⚠️",
+          titulo: "Error de indexación",
+          mensaje: errMsg,
+          textoConfirmar: "Reintentar",
+          soloAlerta: true
+        });
+      }
+    });
+
+  } catch (err) {
+    btn.classList.remove("btn-disabled");
+    await mostrarDialogo({
+      icono: "⚠️",
+      titulo: "Error",
+      mensaje: err.message || "No se pudo guardar la configuración.",
+      textoConfirmar: "Aceptar",
+      soloAlerta: true
+    });
   }
+}
 
+function conectarStreamSincronizacion({ onProgress, onComplete, onError }) {
+  const eventSource = new EventSource("/api/sync/stream");
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+
+      if (data.tipo === "progreso") {
+        onProgress(data.progreso, data.mensaje, data.archivo);
+      } else if (data.tipo === "fin") {
+        eventSource.close();
+        onComplete();
+      } else if (data.tipo === "error") {
+        eventSource.close();
+        onError(data.mensaje);
+      }
+    } catch (e) {
+      console.error("Error parseando evento SSE:", e);
+    }
+  };
+
+  eventSource.onerror = () => {
+    eventSource.close();
+    onError("Se interrumpió la conexión con el motor de sincronización.");
+  };
+}
+
+// ==========================================
+// COMPROBACIÓN SILENCIOSA Y BANNER DE CAMBIOS
+// ==========================================
+async function comprobarSincronizacionFondo() {
+  try {
+    const res = await fetch("/api/sync/check");
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (data.requiere_sincronizacion) {
+      const banner = document.getElementById("sync-notification-banner");
+      const desc = document.getElementById("sync-banner-desc");
+      if (desc) {
+        desc.innerText = `Se detectaron ${data.total_pendientes} cambios (${data.nuevos} nuevos, ${data.modificados} modificados, ${data.eliminados} eliminados) en tus carpetas normativas.`;
+      }
+      if (banner) banner.style.display = "flex";
+    }
+  } catch (e) {
+    console.debug("Check silencioso de sincronización omitido:", e);
+  }
+}
+
+function cerrarBannerSync() {
+  const banner = document.getElementById("sync-notification-banner");
+  if (banner) banner.style.display = "none";
+}
+
+function ejecutarSincronizacionDesdeBanner() {
+  cerrarBannerSync();
+  abrirModalAjustes();
+  comprobarActualizacionesManuales();
+}
+
+// ==========================================
+// MODAL DE AJUSTES TÉCNICOS (SIDEBAR)
+// ==========================================
+function abrirModalAjustes() {
+  const modal = document.getElementById("settings-modal");
+  if (datosUsuarioCache) {
+    document.getElementById("settings-mandatory-input").value = datosUsuarioCache.directorio_obligatorio || "";
+    document.getElementById("settings-opc1-input").value = datosUsuarioCache.directorio_opcional_1 || "";
+    document.getElementById("settings-opc2-input").value = datosUsuarioCache.directorio_opcional_2 || "";
+    cambiarRegionAjustes(datosUsuarioCache.region || "mexico");
+  }
   modal.style.display = "flex";
 }
 
-function cerrarModalPerfil() {
-  document.getElementById("onboarding-modal").style.display = "none";
+function cerrarModalAjustes() {
+  document.getElementById("settings-modal").style.display = "none";
 }
 
-async function guardarPerfil() {
-  const nombreInput = document.getElementById("user-name-input").value.trim();
-  const agenteInput = document.getElementById("agent-name-input").value.trim() || "Asistente Técnico";
+function cambiarRegionAjustes(region) {
+  regionSeleccionada = region;
+  document.getElementById("settings-region-mexico")?.classList.toggle("active", region === "mexico");
+  document.getElementById("settings-region-cam")?.classList.toggle("active", region === "centroamerica");
+}
 
-  if (!nombreInput) {
+async function guardarAjustesDirectorios() {
+  const mandatory = document.getElementById("settings-mandatory-input").value.trim();
+  const opc1 = document.getElementById("settings-opc1-input").value.trim() || null;
+  const opc2 = document.getElementById("settings-opc2-input").value.trim() || null;
+
+  if (!mandatory) {
     await mostrarDialogo({
-      icono: "ℹ️",
-      titulo: "Dato requerido",
-      mensaje: "Por favor escribe tu nombre para continuar.",
+      icono: "⚠️",
+      titulo: "Directorio obligatorio",
+      mensaje: "No puedes dejar la aplicación sin al menos una carpeta principal configurada.",
       textoConfirmar: "Entendido",
       soloAlerta: true
     });
     return;
   }
 
-  if (nombreInput.length > 30 || agenteInput.length > 25) {
+  try {
+    const res = await fetch("/api/config/directories", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        region: regionSeleccionada,
+        directorio_obligatorio: mandatory,
+        directorio_opcional_1: opc1,
+        directorio_opcional_2: opc2
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Error al actualizar directorios");
+    }
+
+    datosUsuarioCache.region = regionSeleccionada;
+    datosUsuarioCache.directorio_obligatorio = mandatory;
+    datosUsuarioCache.directorio_opcional_1 = opc1;
+    datosUsuarioCache.directorio_opcional_2 = opc2;
+
+    actualizarBadgeRegionSidebar(regionSeleccionada);
+    cerrarModalAjustes();
+
     await mostrarDialogo({
-      icono: "⚠️",
-      titulo: "Límite excedido",
-      mensaje: "El nombre personal no debe exceder 30 caracteres y el del agente 25.",
-      textoConfirmar: "Corregir",
+      icono: "✓",
+      titulo: "Configuración guardada",
+      mensaje: "Rutas y región actualizadas con éxito.",
+      textoConfirmar: "Aceptar",
       soloAlerta: true
     });
-    return;
+  } catch (e) {
+    await mostrarDialogo({
+      icono: "⚠️",
+      titulo: "Error",
+      mensaje: e.message,
+      textoConfirmar: "Aceptar",
+      soloAlerta: true
+    });
   }
-
-  await fetch('/api/user/onboarding', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      user_id: userId,
-      nombre: nombreInput,
-      pronombre: pronombreSeleccionado,
-      nombre_agente: agenteInput
-    })
-  });
-
-  datosUsuarioCache = {
-    registrado: true,
-    nombre: nombreInput,
-    pronombre: pronombreSeleccionado,
-    nombre_agente: agenteInput,
-    disclaimer_aceptado: true
-  };
-
-  nombreAgenteGlobal = agenteInput;
-  actualizarTopbar(nombreAgenteGlobal);
-  actualizarSidebarPerfil(nombreInput, pronombreSeleccionado);
-  document.getElementById("onboarding-modal").style.display = "none";
-  await cargarSesiones();
 }
 
+async function comprobarActualizacionesManuales() {
+  const progressBox = document.getElementById("settings-progress-container");
+  progressBox.style.display = "block";
+
+  conectarStreamSincronizacion({
+    onProgress: (progreso, mensaje, archivo) => {
+      document.getElementById("settings-bar-fill").style.width = `${progreso}%`;
+      document.getElementById("settings-progress-percentage").innerText = `${progreso}%`;
+      if (archivo) {
+        document.getElementById("settings-current-file").innerText = `Procesando: ${archivo}`;
+      }
+    },
+    onComplete: async () => {
+      document.getElementById("settings-bar-fill").style.width = "100%";
+      document.getElementById("settings-progress-percentage").innerText = "100%";
+      document.getElementById("settings-current-file").innerText = "Sincronización finalizada.";
+      setTimeout(() => {
+        progressBox.style.display = "none";
+      }, 1500);
+    },
+    onError: async (errMsg) => {
+      progressBox.style.display = "none";
+      await mostrarDialogo({
+        icono: "⚠️",
+        titulo: "Error",
+        mensaje: errMsg,
+        textoConfirmar: "Aceptar",
+        soloAlerta: true
+      });
+    }
+  });
+}
+
+// ==========================================
+// SESIONES Y HISTORIAL
+// ==========================================
 async function cargarSesiones() {
   try {
     const res = await fetch(`/api/sessions/${userId}`);
@@ -320,10 +702,8 @@ async function cargarSesiones() {
   }
 }
 
-// Menú Contextual (3 Puntos)
 function abrirMenuContextual(event, sessionId, sessionTitle, estaFijado, itemEl) {
   cerrarMenuContextual();
-
   itemEl.classList.add("options-open");
 
   const menu = document.createElement("div");
@@ -429,17 +809,9 @@ async function alternarFijarSesion(sessionId) {
     await cargarSesiones();
   } catch (err) {
     console.error("Error al fijar/desfijar sesión:", err);
-    await mostrarDialogo({
-      icono: "⚠️",
-      titulo: "Error de red",
-      mensaje: "Ocurrió un error al intentar fijar el chat. Verifica tu conexión.",
-      textoConfirmar: "Aceptar",
-      soloAlerta: true
-    });
   }
 }
 
-// Modal Renombrar Chat
 function abrirModalRenombrar(sessionId, sessionTitle) {
   sesionRenombrarId = sessionId;
   const inputEl = document.getElementById("rename-input");
@@ -458,27 +830,7 @@ async function guardarRenombrar() {
   const inputEl = document.getElementById("rename-input");
   const nuevoTitulo = inputEl.value.trim();
 
-  if (!nuevoTitulo) {
-    await mostrarDialogo({
-      icono: "⚠️",
-      titulo: "Título requerido",
-      mensaje: "El nombre de la consulta no puede estar vacío.",
-      textoConfirmar: "Entendido",
-      soloAlerta: true
-    });
-    return;
-  }
-
-  if (nuevoTitulo.length > 45) {
-    await mostrarDialogo({
-      icono: "⚠️",
-      titulo: "Límite excedido",
-      mensaje: "El título no puede exceder los 45 caracteres.",
-      textoConfirmar: "Corregir",
-      soloAlerta: true
-    });
-    return;
-  }
+  if (!nuevoTitulo) return;
 
   try {
     const res = await fetch(`/api/sessions/${sesionRenombrarId}/rename`, {
@@ -493,13 +845,6 @@ async function guardarRenombrar() {
     await cargarSesiones();
   } catch (err) {
     console.error(err);
-    await mostrarDialogo({
-      icono: "⚠️",
-      titulo: "Error",
-      mensaje: "Hubo un problema al cambiar el nombre del chat. Intenta de nuevo.",
-      textoConfirmar: "Aceptar",
-      soloAlerta: true
-    });
   }
 }
 
@@ -507,7 +852,7 @@ async function eliminarChatIndividual(sessionId, sessionTitle) {
   const confirmado = await mostrarDialogo({
     icono: "🗑️",
     titulo: "Eliminar consulta",
-    mensaje: `¿Deseas eliminar permanentemente "${sessionTitle}"? Esta acción no se puede deshacer.`,
+    mensaje: `¿Deseas eliminar permanentemente "${sessionTitle}"?`,
     textoConfirmar: "Eliminar",
     textoCancelar: "Cancelar",
     esPeligroso: true
@@ -517,16 +862,7 @@ async function eliminarChatIndividual(sessionId, sessionTitle) {
 
   try {
     const res = await fetch(`/api/sessions/single/${sessionId}`, { method: "DELETE" });
-    if (!res.ok) {
-      await mostrarDialogo({
-        icono: "⚠️",
-        titulo: "Error",
-        mensaje: "No se pudo eliminar la consulta. Intenta nuevamente.",
-        textoConfirmar: "Aceptar",
-        soloAlerta: true
-      });
-      return;
-    }
+    if (!res.ok) return;
 
     const scrollEl = document.getElementById("chat-scroll");
     if (scrollEl) scrollEl.innerHTML = "";
@@ -535,13 +871,6 @@ async function eliminarChatIndividual(sessionId, sessionTitle) {
     await crearSesion();
   } catch (err) {
     console.error("Error eliminando chat individual:", err);
-    await mostrarDialogo({
-      icono: "⚠️",
-      titulo: "Error de red",
-      mensaje: "Ocurrió un error de conexión al intentar eliminar la consulta.",
-      textoConfirmar: "Aceptar",
-      soloAlerta: true
-    });
   }
 }
 
@@ -557,9 +886,11 @@ function cerrarMenuContextual() {
   }
 }
 
-// Modal y Procesos de Exportación
+// ==========================================
+// EXPORTACIÓN DE CHATS
+// ==========================================
 function abrirModalExportar(sessionId, sessionTitle) {
-  sesionExportarId = sessionId;
+  sesionExportarId = sessionId || sesionActivaId;
   sesionExportarTitulo = sessionTitle || "consulta";
   document.getElementById("export-modal").style.display = "flex";
 }
@@ -570,14 +901,15 @@ function cerrarModalExportar() {
 }
 
 async function ejecutarExportacion(formato) {
-  if (!sesionExportarId) return;
+  const sid = sesionExportarId || sesionActivaId;
+  if (!sid) return;
 
   try {
-    const res = await fetch(`/api/messages/${sesionExportarId}`);
+    const res = await fetch(`/api/messages/${sid}`);
     const mensajes = await res.json();
 
     const nombreUsuario = (datosUsuarioCache && datosUsuarioCache.nombre) || "Usuario";
-    const nombreAgente = nombreAgenteGlobal || "Asistente Técnico";
+    const nombreAgente = nombreAgenteGlobal || "Copiloto Técnico";
 
     if (formato === "json") {
       exportarComoJSON(mensajes, nombreUsuario, nombreAgente);
@@ -588,13 +920,6 @@ async function ejecutarExportacion(formato) {
     cerrarModalExportar();
   } catch (err) {
     console.error("Error al exportar:", err);
-    await mostrarDialogo({
-      icono: "⚠️",
-      titulo: "Error de exportación",
-      mensaje: "Ocurrió un problema preparando la descarga del archivo.",
-      textoConfirmar: "Entendido",
-      soloAlerta: true
-    });
   }
 }
 
@@ -613,6 +938,7 @@ function descargarArchivo(contenido, nombreArchivo, mimeType) {
 function exportarComoJSON(mensajes, nombreUsuario, nombreAgente) {
   const data = {
     titulo: sesionExportarTitulo,
+    region: regionSeleccionada,
     fecha_exportacion: new Date().toISOString(),
     usuario: nombreUsuario,
     agente: nombreAgente,
@@ -639,7 +965,6 @@ function exportarComoHTML(mensajes, nombreUsuario, nombreAgente) {
   const colorTextoAsistente = esOscuro ? '#F0F2F5' : '#12161A';
   const colorTagTexto = esOscuro ? '#4DBDF5' : '#001E60';
 
-  // Configuración de marked global para exportación
   marked.setOptions({ breaks: true });
 
   let filasHtml = "";
@@ -649,8 +974,8 @@ function exportarComoHTML(mensajes, nombreUsuario, nombreAgente) {
     let fuentesHtml = "";
 
     if (m.fuentes && m.fuentes.length > 0) {
-      const tags = m.fuentes.map(f => '<span class="source-tag">' + f + '</span>').join("");
-      fuentesHtml = '<div class="sources-box"><strong>Fuentes:</strong> ' + tags + '</div>';
+      const tags = m.fuentes.map(f => `<span class="source-tag">${f}</span>`).join("");
+      fuentesHtml = `<div class="sources-box"><strong>Fuentes normativas:</strong> ${tags}</div>`;
     }
 
     const contenidoHtml = marked.parse(m.contenido);
@@ -666,44 +991,37 @@ function exportarComoHTML(mensajes, nombreUsuario, nombreAgente) {
     `;
   });
 
-  const cssReglas = [
-    "* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }",
-    "body { background-color: " + colorFondo + "; color: " + colorTexto + "; display: flex; justify-content: center; padding: 40px 20px; }",
-    ".chat-container { width: 100%; max-width: 840px; display: flex; flex-direction: column; gap: 22px; }",
-    ".chat-header { padding-bottom: 20px; border-bottom: 1px solid " + colorBorde + "; }",
-    ".chat-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }",
-    ".chat-header span { font-size: 13px; color: #8898AA; }",
-    ".msg-row { display: flex; flex-direction: column; width: 100%; }",
-    ".msg-row.user { align-items: flex-end; }",
-    ".msg-row.assistant { align-items: flex-start; }",
-    ".msg-sender { font-size: 11.5px; font-weight: 600; color: #8898AA; margin-bottom: 5px; padding: 0 4px; }",
-    ".msg-bubble { max-width: 75%; padding: 16px 20px; font-size: 14.5px; line-height: 1.6; border-radius: 18px; box-shadow: 0 4px 14px rgba(0,0,0,0.04); }",
-    ".msg-row.user .msg-bubble { background: #0053E2; color: #FFFFFF; border-bottom-right-radius: 4px; }",
-    ".msg-row.assistant .msg-bubble { background: " + colorBurbujaAsistente + "; color: " + colorTextoAsistente + "; border: 1px solid " + colorBorde + "; border-bottom-left-radius: 4px; }",
-    ".sources-box { margin-top: 12px; padding-top: 10px; border-top: 1px solid " + colorBorde + "; font-size: 12px; }",
-    ".source-tag { display: inline-block; background: rgba(77, 189, 245, 0.18); color: " + colorTagTexto + "; border-radius: 6px; padding: 3px 8px; margin: 3px 4px 3px 0; font-weight: 600; }",
-    ".msg-bubble p { margin-bottom: 10px; } .msg-bubble p:last-child { margin-bottom: 0; }",
-    ".msg-bubble ul, .msg-bubble ol { margin-left: 22px; margin-bottom: 12px; }",
-    ".msg-bubble li { margin-bottom: 4px; }",
-    ".msg-bubble h1, .msg-bubble h2, .msg-bubble h3 { margin: 16px 0 8px 0; font-weight: 700; line-height: 1.3; }",
-    ".msg-bubble pre { background: rgba(0,0,0,0.08); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 12px 0; font-family: monospace; border: 1px solid " + colorBorde + "; }",
-    ".msg-bubble code { font-family: monospace; background: rgba(0,0,0,0.08); padding: 2px 4px; border-radius: 4px; }",
-    ".msg-bubble pre code { background: transparent; padding: 0; }",
-    ".msg-bubble blockquote { border-left: 4px solid #0053E2; padding-left: 14px; margin: 12px 0; font-style: italic; background: rgba(0, 83, 226, 0.05); padding: 8px 14px; border-radius: 0 8px 8px 0; }"
-  ].join("\n");
+  const cssReglas = `
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background-color: ${colorFondo}; color: ${colorTexto}; display: flex; justify-content: center; padding: 40px 20px; }
+    .chat-container { width: 100%; max-width: 840px; display: flex; flex-direction: column; gap: 22px; }
+    .chat-header { padding-bottom: 20px; border-bottom: 1px solid ${colorBorde}; }
+    .chat-header h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .chat-header span { font-size: 13px; color: #8898AA; }
+    .msg-row { display: flex; flex-direction: column; width: 100%; }
+    .msg-row.user { align-items: flex-end; }
+    .msg-row.assistant { align-items: flex-start; }
+    .msg-sender { font-size: 11.5px; font-weight: 600; color: #8898AA; margin-bottom: 5px; padding: 0 4px; }
+    .msg-bubble { max-width: 75%; padding: 16px 20px; font-size: 14.5px; line-height: 1.6; border-radius: 18px; box-shadow: 0 4px 14px rgba(0,0,0,0.04); }
+    .msg-row.user .msg-bubble { background: #0053E2; color: #FFFFFF; border-bottom-right-radius: 4px; }
+    .msg-row.assistant .msg-bubble { background: ${colorBurbujaAsistente}; color: ${colorTextoAsistente}; border: 1px solid ${colorBorde}; border-bottom-left-radius: 4px; }
+    .sources-box { margin-top: 12px; padding-top: 10px; border-top: 1px solid ${colorBorde}; font-size: 12px; }
+    .source-tag { display: inline-block; background: rgba(77, 189, 245, 0.18); color: ${colorTagTexto}; border-radius: 6px; padding: 3px 8px; margin: 3px 4px 3px 0; font-weight: 600; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13.5px; }
+    th, td { border: 1px solid ${colorBorde}; padding: 8px 12px; text-align: left; }
+    th { background: rgba(0,0,0,0.04); font-weight: 600; }
+  `;
 
-  const encabezadoHtml = '<!DOCTYPE html>\n<html lang="es">\n<head>\n  <meta charset="UTF-8">\n  <title>'
-    + sesionExportarTitulo + ' | Consulta Técnica</title>\n  <style>\n'
-    + cssReglas + '\n  </style>\n</head>\n<body>\n  <div class="chat-container">\n    <div class="chat-header">\n      <h1>'
-    + sesionExportarTitulo + '</h1>\n      <span>Exportado el ' + new Date().toLocaleDateString() + ' • Asistente: ' + nombreAgente + '</span>\n    </div>\n';
-
-  const pieHtml = '  </div>\n</body>\n</html>';
-  const plantillaHtml = encabezadoHtml + filasHtml + pieHtml;
+  const encabezadoHtml = `<!DOCTYPE html>\n<html lang="es">\n<head>\n<meta charset="UTF-8">\n<title>${sesionExportarTitulo}</title>\n<style>${cssReglas}</style>\n</head>\n<body>\n<div class="chat-container">\n<div class="chat-header">\n<h1>${sesionExportarTitulo}</h1>\n<span>Exportado el ${new Date().toLocaleDateString()} • Asistente: ${nombreAgente}</span>\n</div>\n`;
+  const pieHtml = `</div>\n</body>\n</html>`;
 
   const nombreLimpio = sesionExportarTitulo.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  descargarArchivo(plantillaHtml, `${nombreLimpio}.html`, "text/html");
+  descargarArchivo(encabezadoHtml + filasHtml + pieHtml, `${nombreLimpio}.html`, "text/html");
 }
 
+// ==========================================
+// OPERACIONES DEL CHAT
+// ==========================================
 async function crearSesion() {
   const res = await fetch(`/api/sessions/${userId}`, { method: 'POST' });
   const nueva = await res.json();
@@ -735,8 +1053,8 @@ async function cargarHistorial(sessionId) {
 async function eliminarTodosLosChats() {
   const confirmado = await mostrarDialogo({
     icono: "🚨",
-    titulo: "¿Vaciar todo el historial?",
-    mensaje: "Se eliminarán todas las consultas guardadas de forma permanente. Esta acción no se puede deshacer.",
+    titulo: "¿Vaciar historial?",
+    mensaje: "Se eliminarán permanentemente todas las consultas registradas.",
     textoConfirmar: "Eliminar todo",
     textoCancelar: "Cancelar",
     esPeligroso: true
@@ -745,36 +1063,15 @@ async function eliminarTodosLosChats() {
   if (!confirmado) return;
 
   try {
-    const res = await fetch(`/api/sessions/${userId}/clear-all`, {
-      method: "DELETE"
-    });
-
+    const res = await fetch(`/api/sessions/${userId}/clear-all`, { method: "DELETE" });
     if (res.ok) {
-      const listEl = document.getElementById("session-list");
-      const scrollEl = document.getElementById("chat-scroll");
-      if (listEl) listEl.innerHTML = "";
-      if (scrollEl) scrollEl.innerHTML = "";
+      document.getElementById("session-list").innerHTML = "";
+      document.getElementById("chat-scroll").innerHTML = "";
       sesionActivaId = null;
-
       await crearSesion();
-    } else {
-      await mostrarDialogo({
-        icono: "⚠️",
-        titulo: "Error",
-        mensaje: "No se pudo vaciar el historial. Intenta nuevamente.",
-        textoConfirmar: "Aceptar",
-        soloAlerta: true
-      });
     }
   } catch (err) {
     console.error("Error al vaciar chats:", err);
-    await mostrarDialogo({
-      icono: "⚠️",
-      titulo: "Error de red",
-      mensaje: "Ocurrió un error al intentar vaciar las consultas.",
-      textoConfirmar: "Aceptar",
-      soloAlerta: true
-    });
   }
 }
 
@@ -817,7 +1114,7 @@ async function renderizarBurbuja(texto, rol, fuentes = []) {
   if (fuentes && fuentes.length > 0) {
     const fuentesDiv = document.createElement("div");
     fuentesDiv.className = "sources-container";
-    fuentesDiv.innerHTML = "<strong>Fuentes:</strong> ";
+    fuentesDiv.innerHTML = "<strong>Fuentes normativas:</strong> ";
     fuentes.forEach(f => {
       const tag = document.createElement("span");
       tag.className = "source-tag";
@@ -856,12 +1153,163 @@ async function enviarMensaje() {
     await cargarSesiones();
   } catch (err) {
     removerIndicadorPensando();
-    renderizarBurbuja("Ocurrió un error al enviar el mensaje. Intenta de nuevo.", "assistant", []);
+    renderizarBurbuja("Ocurrió un inconveniente al consultar las normativas locales. Inténtalo de nuevo.", "assistant", []);
   }
 }
 
 function alPresionarTecla(e) {
   if (e.key === "Enter") enviarMensaje();
+}
+
+// ==========================================
+// MODAL DE PERFIL DE USUARIO
+// ==========================================
+let pronombrePerfilSeleccionado = "neutro";
+
+function abrirModalPerfil() {
+  const modal = document.getElementById("profile-modal");
+  if (datosUsuarioCache) {
+    document.getElementById("profile-name-input").value = datosUsuarioCache.nombre || "";
+    document.getElementById("profile-agent-input").value = datosUsuarioCache.nombre_agente || "";
+    seleccionarPronombrePerfil(datosUsuarioCache.pronombre || "neutro", document.getElementById(`profile-pronoun-${datosUsuarioCache.pronombre || "neutro"}`));
+  }
+  modal.style.display = "flex";
+}
+
+function cerrarModalPerfil() {
+  document.getElementById("profile-modal").style.display = "none";
+}
+
+function seleccionarPronombrePerfil(valor, btn) {
+  pronombrePerfilSeleccionado = valor;
+  document.querySelectorAll('#profile-modal .btn-choice').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+async function guardarAjustesPerfil() {
+  const nombre = document.getElementById("profile-name-input").value.trim();
+  const agente = document.getElementById("profile-agent-input").value.trim() || "Copiloto Técnico";
+
+  if (!nombre) {
+    await mostrarDialogo({
+      icono: "ℹ️", titulo: "Nombre requerido", mensaje: "Por favor escribe tu nombre.", textoConfirmar: "Entendido", soloAlerta: true
+    });
+    return;
+  }
+
+  try {
+    // Reutilizamos el endpoint de onboarding pasando los datos existentes de carpetas
+    const res = await fetch("/api/user/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: userId,
+        nombre: nombre,
+        pronombre: pronombrePerfilSeleccionado,
+        nombre_agente: agente,
+        region: datosUsuarioCache.region,
+        directorio_obligatorio: datosUsuarioCache.directorio_obligatorio,
+        directorio_opcional_1: datosUsuarioCache.directorio_opcional_1,
+        directorio_opcional_2: datosUsuarioCache.directorio_opcional_2
+      })
+    });
+
+    if (!res.ok) throw new Error("Error al guardar el perfil");
+
+    // Actualizar caché y UI
+    datosUsuarioCache.nombre = nombre;
+    datosUsuarioCache.pronombre = pronombrePerfilSeleccionado;
+    datosUsuarioCache.nombre_agente = agente;
+    nombreAgenteGlobal = agente;
+
+    actualizarTopbar(agente);
+    actualizarSidebarPerfil(nombre, pronombrePerfilSeleccionado);
+    cerrarModalPerfil();
+
+    await mostrarDialogo({
+      icono: "✓", titulo: "Perfil actualizado", mensaje: "Tus datos se guardaron correctamente.", textoConfirmar: "Aceptar", soloAlerta: true
+    });
+  } catch (e) {
+    await mostrarDialogo({
+      icono: "⚠️", titulo: "Error", mensaje: e.message, textoConfirmar: "Aceptar", soloAlerta: true
+    });
+  }
+}
+
+// ==========================================
+// NUEVO FLUJO DE IMPORTACIÓN DESDE MODAL DEDICADO
+// ==========================================
+function abrirModalImportar() {
+  document.getElementById("import-path-input").value = "";
+  document.getElementById("import-modal").style.display = "flex";
+}
+
+function cerrarModalImportar() {
+  document.getElementById("import-modal").style.display = "none";
+}
+
+async function abrirSelectorArchivoNativo() {
+  try {
+    const res = await fetch("/api/browse-file", { method: "POST" });
+    const data = await res.json();
+    if (data.ruta) {
+      document.getElementById("import-path-input").value = data.ruta;
+    }
+  } catch (err) {
+    console.error("Error al abrir el selector de archivo:", err);
+  }
+}
+
+async function ejecutarImportacion() {
+  const ruta = document.getElementById("import-path-input").value.trim();
+
+  if (!ruta || !ruta.toLowerCase().endsWith('.json')) {
+    await mostrarDialogo({
+      icono: "⚠️",
+      titulo: "Archivo no válido",
+      mensaje: "Por favor, selecciona o escribe la ruta de un archivo .json válido.",
+      textoConfirmar: "Entendido",
+      soloAlerta: true
+    });
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/sessions/${userId}/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ruta_archivo: ruta })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Error en la importación.");
+    }
+
+    const data = await res.json();
+
+    cerrarModalImportar();
+    await cargarSesiones();
+    alternarSesion(data.session_id);
+
+    await mostrarDialogo({
+      icono: "✅",
+      titulo: "Importación exitosa",
+      mensaje: `El chat se ha restaurado correctamente en tu historial.`,
+      textoConfirmar: "Aceptar",
+      soloAlerta: true
+    });
+
+  } catch (error) {
+    console.error(error);
+    await mostrarDialogo({
+      icono: "⚠️",
+      titulo: "Error de importación",
+      mensaje: error.message || "El archivo JSON no se pudo leer o está corrupto.",
+      textoConfirmar: "Aceptar",
+      soloAlerta: true
+    });
+  }
 }
 
 window.onload = inicializar;
